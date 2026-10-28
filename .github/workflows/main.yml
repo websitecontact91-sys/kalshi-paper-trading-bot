@@ -28,4 +28,4 @@ jobs:
         run: python -m pytest -q
 
       - name: Run consolidated paper monitor
-        run: python -u paper_runner.py --once
+        run: python -u paper_runner.py --duration 15
