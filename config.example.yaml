@@ -7,11 +7,8 @@ max_markets_per_series: 200
 series_tickers: [] # REQUIRED: explicit Kalshi 15-minute series tickers, verified on Kalshi
 min_seconds_left: 5
 max_seconds_left: 60
-min_probability: 0.80
-max_probability: 0.90
 min_payout: 1.10
 max_payout: 1.20
-min_expected_roi: 0.02
 min_contract_price: 0.80
 max_contract_price: 0.90
 volatility_lookback_seconds: 3600

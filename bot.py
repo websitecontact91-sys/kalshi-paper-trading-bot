@@ -254,17 +254,14 @@ def evaluate(market, cfg, spot, vol, book, t):
     price, ts = spot
     if t-ts > cfg.get("max_underlying_age_seconds",15) or ts-t > 3:
         return None, "stale underlying quote"
-    sigma = vol.sigma_remaining(mapping["product_id"], remaining, cfg.get("min_price_samples",60))
-    prob = estimate_probability(price, float(mapping["target_price"]), mapping.get("yes_when"), sigma)
-    if prob is None:
-        return None, "insufficient volatility data"
-    p_yes, z = prob
+    # Contract ask is the market-implied probability. No independent model filter.
+    target = float(mapping["target_price"])
+    if target <= 0 or price <= 0 or mapping.get("yes_when") not in ("above", "at_or_above"):
+        return None, "invalid target or threshold rule"
     candidates = []
-    for side, p, direction_z in (("YES",p_yes,z),("NO",1-p_yes,-z)):
+    for side in ("YES", "NO"):
         ask = implied_ask(market, side)
         if ask is None or not 0 < ask < 1:
-            continue
-        if not cfg["min_probability"] <= p <= cfg["max_probability"]:
             continue
         if not cfg.get("min_contract_price", 0.80) <= ask <= cfg.get("max_contract_price", 0.90):
             continue
@@ -281,22 +278,21 @@ def evaluate(market, cfg, spot, vol, book, t):
         if depth < 1:
             continue
         # A single trade will be capped to available depth.
-        expected_roi = (p*contracts-actual_cost)/actual_cost
-        if expected_roi < cfg["min_expected_roi"]:
-            continue
-        target = float(mapping["target_price"])
         # Positive only when the current underlying is on the chosen winning side.
         signed_distance = (price-target) if side == "YES" else (target-price)
+        # Do not rank a side whose underlying price is already on its losing side.
+        if signed_distance <= 0:
+            continue
         candidates.append(dict(ticker=ticker,side=side,ask=ask,contracts=contracts,
                                stake=actual_cost,fees=fees_per_contract*contracts,
-                               probability=p,z=direction_z,roi=expected_roi,payout=payout,
+                               probability=ask,z=0.0,roi=(ask/(ask+fees_per_contract)-1),payout=payout,
                                target_price=target,underlying_price=price,
                                signed_distance=signed_distance,
                                distance_pct=100*signed_distance/target,
                                close_time=close, depth=depth,
                                fees_per_contract=fees_per_contract))
     if not candidates:
-        return None, "no side passes price/probability/liquidity/edge checks"
+        return None, "no side passes price/payout/liquidity/direction checks"
     return choose_candidate(candidates), "qualified"
 
 
@@ -361,8 +357,6 @@ def validate(cfg):
             raise ValueError("missing config: "+key)
     if not cfg["series_tickers"]:
         raise ValueError("Set explicit verified 15-minute series_tickers before running")
-    if not 0 < cfg["min_probability"] <= cfg["max_probability"] < 1:
-        raise ValueError("invalid probability bounds")
     if cfg["stake_usd"] <= 0 or cfg["stake_usd"] > 5.0:
         raise ValueError("paper stake must be between $0 and $5")
     if not 0 < cfg.get("min_contract_price", 0.80) <= cfg.get("max_contract_price", 0.90) < 1:
