@@ -1,5 +1,5 @@
 
-name: Kalshi Bot - Initial Test
+name: Kalshi Bot - Continuous Monitor
 
 on:
   workflow_dispatch:
@@ -8,9 +8,9 @@ permissions:
   contents: read
 
 jobs:
-  test-bot:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  monitor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
 
     steps:
       - name: Download bot code
@@ -23,12 +23,18 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          python -m pip install -r requirements.txt
 
       - name: Test trading rules
         run: python -m pytest -q
 
       - name: Check Kalshi market discovery
-        run: python discover.py
+        run: python -u discover.py
+
+      - name: Run continuous monitoring
+        run: |
+          python -u monitor.py --interval 2 &
+          MONITOR_PID=$!
+          sleep 300
+          kill "$MONITOR_PID" 2>/dev/null || true
+          wait "$MONITOR_PID" 2>/dev/null || true
