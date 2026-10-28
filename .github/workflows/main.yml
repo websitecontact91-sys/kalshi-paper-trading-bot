@@ -48,4 +48,4 @@ jobs:
           GITHUB_ACTIONS: 'true'
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
-        run: python -u paper_runner.py --duration 240 --paper --persist-to-github
+        run: python -u paper_runner.py --duration 240
