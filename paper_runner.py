@@ -146,9 +146,11 @@ class KalshiCFPrices:
         }
         r = self.session.get('https://external-api.kalshi.com' + path,
                              params={'id': index_id}, headers=headers, timeout=12)
+
         if not r.ok:
-    LOG.warning("CF API ERROR %s: %s", index_id, r.text[:500])
+            LOG.warning("CF API ERROR %s: %s", index_id, r.text[:500])
         r.raise_for_status()
+
         payload = r.json().get('data', {}).get('payload')
         if not isinstance(payload, list) or not payload:
             raise ValueError('Unexpected CF price payload format for ' + index_id)
