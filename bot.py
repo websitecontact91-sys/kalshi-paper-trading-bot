@@ -350,8 +350,13 @@ def settle_pending(db, kalshi):
 
 
 def validate(cfg):
-    required = ("series_tickers","markets","stake_usd","min_probability","max_probability",
-                "min_payout","max_payout","min_expected_roi")
+    required = (
+        "series_tickers",
+        "markets",
+        "stake_usd",
+        "min_payout",
+        "max_payout",
+    )
     for key in required:
         if key not in cfg:
             raise ValueError("missing config: "+key)
