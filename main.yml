@@ -1,0 +1,22 @@
+name: Kalshi Bot - Discovery and Continuous Monitoring
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  paper-safe-monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run unit tests
+        run: python -m pytest -q
+      - name: One-time targeted market discovery
+        run: python -u discover.py
+      - name: Continuously monitor markets for 5 minutes (READ ONLY)
+        run: python -u monitor.py --interval 2 --duration 300

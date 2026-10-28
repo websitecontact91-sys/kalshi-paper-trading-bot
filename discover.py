@@ -1,17 +1,13 @@
-"""Read-only Kalshi 15-minute market candidate discovery.
-
-CLI: python discover.py [--max-pages 25] [--limit 200]
-Candidates are NOT verified to settle using any particular reference feed.
-"""
+"""Read-only targeted Kalshi 15-minute series discovery; never submits orders."""
 import argparse
 import datetime as dt
 import re
 import sys
 import time
 
-ASSET_SERIES = re.compile(r'15M(?:IN(?:UTE)?)?(?:-|$)', re.I)
-CATEGORY_HINTS = re.compile(r'crypto|bitcoin|ethereum|solana|commodity|gold|silver|oil|brent|forex|currency|fx|exchange rate|hyperliquid|hype|gbp/usd|eur/usd', re.I)
-KNOWN_PREFIXES = ('KXBTC', 'KXETH', 'KXSOL', 'KXGOLD', 'KXBRENT', 'KXGBP', 'KXEUR', 'KXHYPE')
+BASE = 'https://api.elections.kalshi.com/trade-api/v2'
+SEED_SERIES = ('KXBTC15M', 'KXETH15M', 'KXSOL15M', 'KXGOLD15M', 'KXBRENT15M', 'KXGBPUSD15M', 'KXHYPE15M')
+ASSET = re.compile(r'crypto|bitcoin|ethereum|solana|commodity|gold|silver|oil|brent|forex|currency|exchange rate|hyperliquid|hype|gbp|eur|btc|eth|sol', re.I)
 
 
 def parse_utc(s):
@@ -23,86 +19,117 @@ def parse_utc(s):
 
 
 def looks_eligible(m, series_categories=None):
-    """Conservative ticker/label candidate filter, not duration proof."""
     series = m.get('series_ticker') or m.get('ticker', '').split('-')[0]
-    label = ' '.join(str(m.get(k) or '') for k in ('title', 'subtitle', 'category'))
-    category = (series_categories or {}).get(series, '')
-    if not ASSET_SERIES.search(series):
+    if not re.search(r'15M(?:IN(?:UTE)?)?$', series, re.I):
         return False
-    if not (CATEGORY_HINTS.search(label + ' ' + category) or series.upper().startswith(KNOWN_PREFIXES)):
-        return False
-    closed = parse_utc(m.get('close_time'))
-    return bool(closed and m.get('status') in ('open', 'active'))
+    text = ' '.join(str(m.get(k) or '') for k in ('title','subtitle','category'))
+    text += ' ' + (series_categories or {}).get(series, '')
+    return bool((ASSET.search(text) or series.upper() in SEED_SERIES) and m.get('status') in ('open','active') and parse_utc(m.get('close_time')))
 
 
-def discover_open(kalshi, max_pages=25, page_size=200, clock=time.time, stats=None):
-    """Paginate open markets and return likely 15-minute candidates.
-
-    max_pages bounds API usage. stats indicates when discovery is incomplete.
-    """
+def discover_series(client, max_pages=10, limit=200):
+    """Catalog discovery is best-effort. Report incomplete pagination explicitly."""
+    series = set(SEED_SERIES)
     cursor = None
-    found = {}
+    complete = False
     pages = 0
-    total = 0
-    exhausted = False
+    error = None
     for _ in range(max_pages):
-        params = {'status': 'open', 'limit': page_size}
+        params = {'limit': limit}
         if cursor:
             params['cursor'] = cursor
-        data = kalshi.get('/markets', params)
-        if not isinstance(data, dict) or not isinstance(data.get('markets'), list):
-            raise ValueError('Unexpected Kalshi markets response')
-        pages += 1
-        markets = data['markets']
-        total += len(markets)
-        for m in markets:
-            if looks_eligible(m) and parse_utc(m.get('close_time')) > clock():
-                found[m['ticker']] = m
-        next_cursor = data.get('cursor')
-        if not next_cursor or next_cursor == cursor:
-            exhausted = True
+        try:
+            data = client.get('/series', params)
+            if not isinstance(data.get('series'), list):
+                raise ValueError('Unexpected /series response')
+        except Exception as exc:
+            error = f'{type(exc).__name__}: {exc}'
             break
-        cursor = next_cursor
+        pages += 1
+        for s in data['series']:
+            ticker = str(s.get('ticker') or '')
+            label = ' '.join(str(s.get(k) or '') for k in ('title','category','frequency','product_metadata'))
+            if re.search(r'15M(?:IN(?:UTE)?)?$', ticker, re.I) and (ASSET.search(ticker + ' ' + label) or ticker in SEED_SERIES):
+                series.add(ticker)
+        nxt = data.get('cursor')
+        if not nxt or nxt == cursor:
+            complete = True
+            break
+        cursor = nxt
+    return sorted(series), {'series_pages':pages,'series_complete':complete,'series_error':error}
+
+
+def discover_open(client, max_pages=10, page_size=200, clock=time.time, stats=None, series_tickers=None):
+    """Query each candidate series directly; avoids broad /markets pagination bias."""
+    if series_tickers is None:
+        series_tickers, catalog = discover_series(client, max_pages=max_pages, limit=page_size)
+    else:
+        catalog = {'series_pages':0,'series_complete':False,'series_error':None}
+    found = {}
+    failures = {}
+    truncated = []
+    total = 0
+    for series in series_tickers:
+        cursor = None
+        for page in range(max_pages):
+            params = {'series_ticker':series,'status':'open','limit':page_size}
+            if cursor:
+                params['cursor'] = cursor
+            try:
+                data = client.get('/markets',params)
+                if not isinstance(data.get('markets'),list):
+                    raise ValueError('Unexpected /markets response')
+            except Exception as exc:
+                failures[series] = f'{type(exc).__name__}: {exc}'
+                break
+            markets = data['markets']
+            total += len(markets)
+            for m in markets:
+                if looks_eligible(m) and parse_utc(m['close_time']) > clock():
+                    found[m['ticker']] = m
+            nxt = data.get('cursor')
+            if not nxt or nxt == cursor:
+                break
+            cursor = nxt
+            if page == max_pages-1:
+                truncated.append(series)
     if stats is not None:
-        stats.update(pages=pages, markets_scanned=total, candidates=len(found),
-                     complete_pagination=exhausted)
+        stats.update(catalog)
+        stats.update(series_checked=len(series_tickers),markets_scanned=total,candidates=len(found),failed_series=failures,truncated_series=truncated,
+                     complete_pagination=catalog['series_complete'] and not failures and not truncated)
     return list(found.values())
 
 
 def run_cli(argv=None):
-    parser = argparse.ArgumentParser(description='Print live Kalshi 15-minute market candidates (read-only)')
-    parser.add_argument('--max-pages', type=int, default=25)
-    parser.add_argument('--limit', type=int, default=200)
-    parser.add_argument('--show', type=int, default=50)
-    args = parser.parse_args(argv)
-    if not (1 <= args.max_pages <= 500 and 1 <= args.limit <= 200 and 0 <= args.show <= 500):
-        parser.error('Invalid pagination or display limit')
+    p = argparse.ArgumentParser()
+    p.add_argument('--max-pages',type=int,default=10)
+    p.add_argument('--limit',type=int,default=200)
+    p.add_argument('--show',type=int,default=30)
+    args=p.parse_args(argv)
+    if not 1 <= args.max_pages <= 100 or not 1 <= args.limit <= 200 or not 0 <= args.show <= 500:
+        p.error('Invalid limits')
     from bot import Kalshi
-    client = Kalshi('https://api.elections.kalshi.com/trade-api/v2')
-    stats = {}
-    print('KALSHI PUBLIC MARKET DISCOVERY - READ ONLY', flush=True)
-    print('Candidates are unverified; no simulated or real trades are placed.', flush=True)
+    stats={}
+    print('KALSHI TARGETED 15-MINUTE DISCOVERY - READ ONLY',flush=True)
     try:
-        markets = discover_open(client, max_pages=args.max_pages, page_size=args.limit, stats=stats)
+        markets=discover_open(Kalshi(BASE),max_pages=args.max_pages,page_size=args.limit,stats=stats)
     except Exception as exc:
-        print(f'ERROR: Could not fetch Kalshi markets: {type(exc).__name__}: {exc}', file=sys.stderr, flush=True)
+        print(f'ERROR: {exc}',file=sys.stderr,flush=True)
         return 1
-    print(f"Scanned {stats['markets_scanned']} open markets across {stats['pages']} API pages.")
-    print(f"Potential 15-minute crypto/commodity/FX markets: {len(markets)}")
+    print(f"Series checked: {stats['series_checked']} | markets scanned: {stats['markets_scanned']} | candidates: {len(markets)}")
+    print(f"Series catalog pages: {stats['series_pages']} | catalog complete: {stats['series_complete']}")
+    if stats['series_error']:
+        print('WARNING series catalog:',stats['series_error'])
+    if stats['failed_series']:
+        print('WARNING series API failures:',stats['failed_series'])
+    if stats['truncated_series']:
+        print('WARNING truncated series:',stats['truncated_series'])
     if not stats['complete_pagination']:
-        print('WARNING: Pagination limit reached; this is NOT a complete scan of all markets.')
-    if not markets:
-        print('No candidates found. This does not prove no eligible markets exist; filtering or pagination may miss them.')
-    for m in sorted(markets, key=lambda x: x.get('close_time') or '')[:args.show]:
-        print(f"MARKET {m.get('ticker')} | closes={m.get('close_time')} | "
-              f"YES bid/ask={m.get('yes_bid_dollars', m.get('yes_bid', '?'))}/"
-              f"{m.get('yes_ask_dollars', m.get('yes_ask', '?'))} | "
-              f"NO bid/ask={m.get('no_bid_dollars', m.get('no_bid', '?'))}/"
-              f"{m.get('no_ask_dollars', m.get('no_ask', '?'))} | "
-              f"threshold={m.get('floor_strike', m.get('functional_strike', 'UNVERIFIED'))} | "
-              f"title={m.get('title', '')}")
-    print('NOTE: Displayed thresholds may be absent or unsuitable for settlement. Verify official market rules.')
-    return 0
+        print('WARNING: Coverage NOT complete; no candidates does not imply no active markets.')
+    for m in sorted(markets,key=lambda x:x.get('close_time') or '')[:args.show]:
+        print(f"MARKET {m.get('ticker')} closes={m.get('close_time')} YES_ask={m.get('yes_ask_dollars',m.get('yes_ask','?'))} NO_ask={m.get('no_ask_dollars',m.get('no_ask','?'))} strike={m.get('floor_strike','UNVERIFIED')} title={m.get('title','')}")
+    print('READ ONLY: settlement references, market duration and price feeds are NOT verified. No paper or real trades.')
+    return 1 if stats['failed_series'] and not markets else 0
 
 
 if __name__ == '__main__':
