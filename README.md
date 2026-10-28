@@ -118,3 +118,17 @@ been validated. The current discovery pass polls every 60 seconds, NOT every
 - **Important:** The model probability and minimum ROI remain separate filters from the market's 80-90 cent ask price. At these payout levels, some combinations may never qualify after fees. This is expected fail-closed behavior.
 - **Not ready for live paper sessions across every 15-minute market:** discovery currently identifies potential series only; exact per-market verified settlement thresholds and underlying price feeds still require integration. The current bot requires `series_tickers` and exact `markets` mappings. It must not be described as fully automatic.
 - Existing SQLite databases containing multi-position baskets must not be reused; start with a fresh `paper.sqlite3` database after verifying configuration.
+
+## Discovery CLI fix (GitHub Actions)
+
+`python discover.py` now **actually fetches** public Kalshi open-market pages and
+prints a count and details of potential 15-minute crypto/commodity/FX markets.
+A network/API error returns a nonzero exit code, so GitHub Actions marks the
+step failed instead of silently succeeding. It also warns when its page limit
+prevents a complete catalog scan. This is a **read-only discovery diagnostic**;
+no paper positions or live orders are created by this command. It does **not**
+verify exact 15-minute duration, underlying settlement oracle, target semantics,
+or completeness of all available market families. Such verification is still
+required before meaningful paper trading.
+
+The workflow command remains `python discover.py` (no workflow edit needed).
