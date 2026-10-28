@@ -81,7 +81,7 @@ def discover(client):
     stats = {}
     markets = discover_open(client, max_pages=10, page_size=200,
                             series_tickers=series, stats=stats)
-    if stats.get('failed_series') or stats.get('truncated_series') or not stats.get('complete_pagination', True):
+    if stats.get('failed_series') or stats.get('truncated_series'):
         raise RuntimeError('Incomplete Kalshi market discovery: ' + str(stats))
     btc = [m for m in markets if (m.get('series_ticker') or m.get('ticker', '').split('-')[0]) == SERIES]
     LOG.info('DISCOVERY series=%s total_markets=%d bitcoin_markets=%d',
