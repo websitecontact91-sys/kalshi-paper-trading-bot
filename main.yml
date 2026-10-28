@@ -1,22 +1,29 @@
-name: Kalshi Bot - Discovery and Continuous Monitoring
+name: Kalshi Bot - Consolidated Paper Monitor
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
 permissions:
-  contents: read
+  contents: write
+concurrency:
+  group: kalshi-paper-state
+  cancel-in-progress: false
 jobs:
-  paper-safe-monitor:
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
+  monitor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Download bot code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Install Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
-      - name: Run unit tests
+      - name: Test trading rules
         run: python -m pytest -q
-      - name: One-time targeted market discovery
-        run: python -u discover.py
-      - name: Continuously monitor markets for 5 minutes (READ ONLY)
-        run: python -u monitor.py --interval 2 --duration 300
+      - name: Run consolidated read-only monitor
+        run: python -u paper_runner.py --duration 270
