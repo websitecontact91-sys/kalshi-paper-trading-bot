@@ -35,7 +35,13 @@ jobs:
           python -m pip install cryptography
 
       - name: Check Python syntax
-        run: python -m py_compile paper_runner.py discover.py bot.py
+        run: python -m py_compile paper_runner.py discover.py bot.py feed_probe.py
+
+      - name: Diagnose all 15-minute market price feeds
+        env:
+          KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+        run: python -u feed_probe.py
 
       - name: Run Bitcoin paper trading
         env:
