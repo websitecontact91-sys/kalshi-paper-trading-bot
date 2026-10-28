@@ -1,5 +1,5 @@
 
-name: Kalshi Bot - Continuous Monitor
+name: Kalshi Bot - Consolidated Paper Monitor
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ permissions:
 jobs:
   monitor:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 3
 
     steps:
       - name: Download bot code
@@ -22,19 +22,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: |
-          python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt
 
-      - name: Test trading rules
+      - name: Test all trading rules
         run: python -m pytest -q
 
-      - name: Check Kalshi market discovery
-        run: python -u discover.py
-
-      - name: Run continuous monitoring
-        run: |
-          python -u monitor.py --interval 2 &
-          MONITOR_PID=$!
-          sleep 300
-          kill "$MONITOR_PID" 2>/dev/null || true
-          wait "$MONITOR_PID" 2>/dev/null || true
+      - name: Run consolidated paper monitor
+        run: python -u paper_runner.py --once
