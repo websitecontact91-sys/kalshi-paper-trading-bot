@@ -29,8 +29,8 @@ jobs:
       - name: Test all trading rules
         run: python -m pytest -q --ignore=test_kalshi_prices.py
 
-      - name: Test Kalshi live Bitcoin price
+      - name: Run updated Kalshi price monitor
         env:
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
-        run: python -u test_kalshi_prices.py
+        run: python -u paper_runner.py --duration 15
