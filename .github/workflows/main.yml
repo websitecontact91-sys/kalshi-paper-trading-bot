@@ -27,5 +27,13 @@ jobs:
       - name: Test all trading rules
         run: python -m pytest -q
 
-      - name: Run consolidated paper monitor
-        run: python -u paper_runner.py --duration 15
+
+      - name: Install price-test dependency
+        run: python -m pip install cryptography
+
+      - name: Test Kalshi live Bitcoin price
+        env:
+          KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+        run: python -u test_kalshi_prices.py
+
