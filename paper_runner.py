@@ -234,6 +234,43 @@ def loop(args):
                 LOG.info('SCAN markets=%d (Pyth supported=%d; CF requires verified feed)',
                          len(markets), len(PYTH_SYMBOLS))
                 candidates = []
+                
+                # Read-only live price and distance diagnostics.
+                # Runs before the final minute; never creates a trade.
+                if not hasattr(loop, "_price_probe_done"):
+                    loop._price_probe_done = True
+                    for probe_market in markets:
+                        probe_series = (
+                            probe_market.get("series_ticker")
+                            or probe_market["ticker"].split("-")[0]
+                        )
+                        if probe_series not in PYTH_SYMBOLS:
+                            continue
+                        try:
+                            probe_target = float(probe_market["floor_strike"])
+                            probe_price, probe_timestamp = pyth.price(
+                                PYTH_SYMBOLS[probe_series]
+                            )
+                            probe_distance = (
+                                100 * (probe_price - probe_target) / probe_target
+                            )
+                            LOG.info(
+                                "LIVE PRICE %s target=%.6f current=%.6f "
+                                "yes_distance=%.5f%% no_distance=%.5f%% "
+                                "source=PYTH_LIVE_PROXY",
+                                probe_series,
+                                probe_target,
+                                probe_price,
+                                probe_distance,
+                                -probe_distance,
+                            )
+                        except Exception as exc:
+                            LOG.warning(
+                                "LIVE PRICE UNAVAILABLE %s: %s",
+                                probe_series,
+                                exc,
+                            )
+
                 for m in markets:
                     series = m.get('series_ticker') or m['ticker'].split('-')[0]
                     if series not in PYTH_SYMBOLS:
