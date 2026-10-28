@@ -1,0 +1,8 @@
+services:
+  - type: worker
+    name: kalshi-paper-discovery
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python monitor.py --interval 60
+    autoDeployTrigger: commit
