@@ -25,8 +25,12 @@ from discover import discover_open, discover_series
 LOG = logging.getLogger('paper_runner')
 BASE = 'https://api.elections.kalshi.com/trade-api/v2'
 STATE_FILE = Path('paper_state.json')
-SERIES = 'KXBTC15M'
-INDEX_ID = 'BRTI'
+CF_INDEX_IDS = {
+    'KXBTC15M': 'BRTI',
+    'KXETH15M': 'ETHUSD_RTI',
+    'KXSOL15M': 'SOLUSD_RTI',
+    'KXHYPE15M': 'HYPEUSD_RTI',
+}
 FEE_RESERVE_PER_SHARE = 0.10  # PAPER estimate, deliberately conservative
 
 
@@ -83,10 +87,16 @@ def discover(client):
                             series_tickers=series, stats=stats)
     if stats.get('failed_series') or stats.get('truncated_series'):
         raise RuntimeError('Incomplete Kalshi market discovery: ' + str(stats))
-    btc = [m for m in markets if (m.get('series_ticker') or m.get('ticker', '').split('-')[0]) == SERIES]
-    LOG.info('DISCOVERY series=%s total_markets=%d bitcoin_markets=%d',
-             stats.get('series_checked'), len(markets), len(btc))
-    return btc
+supported = [
+    m for m in markets
+    if (m.get('series_ticker') or m.get('ticker', '').split('-')[0])
+    in CF_INDEX_IDS
+]
+LOG.info(
+    'DISCOVERY series=%s total_markets=%d supported_crypto_markets=%d',
+    stats.get('series_checked'), len(markets), len(supported)
+)
+return supported
 
 
 class KalshiCFPrices:
@@ -98,9 +108,10 @@ class KalshiCFPrices:
         self.key = serialization.load_pem_private_key(pem.encode('utf-8'), password=None)
         self.session = requests.Session()
 
-    def price(self, series=SERIES):
-        if series != SERIES:
-            raise ValueError('Only verified BRTI is enabled')
+    def price(self, series):
+    if series not in CF_INDEX_IDS:
+        raise ValueError('No verified CF price mapping for ' + series)
+    index_id = CF_INDEX_IDS[series]
         path = '/trade-api/v2/cfbenchmarks/values'
         stamp = str(int(time.time() * 1000))
         msg = (stamp + 'GET' + path).encode('utf-8')
@@ -111,7 +122,7 @@ class KalshiCFPrices:
                 mgf=padding.MGF1(hashes.SHA256()),
                 salt_length=hashes.SHA256().digest_size), hashes.SHA256())
         response = self.session.get('https://external-api.kalshi.com' + path,
-            params={'id': INDEX_ID}, headers={
+            params={'id': index_id}, headers={
                 'KALSHI-ACCESS-KEY': self.key_id,
                 'KALSHI-ACCESS-TIMESTAMP': stamp,
                 'KALSHI-ACCESS-SIGNATURE': base64.b64encode(sig).decode('ascii'),
@@ -241,7 +252,8 @@ def loop(args):
                 if any(t.get('round_id') == m['close_time'] for t in state['history']):
                     continue  # Only one paper trade per 15-minute round.
                 try:
-                    px, ts = cf.price()
+                    series = m.get('series_ticker') or m['ticker'].split('-')[0]
+px, ts = cf.price(series)
                     fresh = client.market(m['ticker'])
                     book = client.orderbook(m['ticker'])
                     options = evaluate_market(fresh, px, time.time(), book, state['balance'])
@@ -264,7 +276,8 @@ def loop(args):
                 else:
                     LOG.info('READ-ONLY MODE: no simulated entry')
             else:
-                LOG.info('SCAN btc_markets=%d candidates=0 mode=%s', len(markets), state['mode'])
+                LOG.info('SCAN supported_crypto_markets=%d candidates=0 mode=%s',
+         len(markets), state['mode'])
         time.sleep(max(0, args.interval - (time.monotonic() - tick)))
 
 
