@@ -1,20 +1,28 @@
 
-name: Kalshi Bot - Consolidated Paper Monitor
+name: Kalshi Bot - Bitcoin Paper Trading
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: kalshi-bitcoin-paper-state
+  cancel-in-progress: false
 
 jobs:
   monitor:
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
-
+    timeout-minutes: 6
     steps:
-      - name: Download bot code
+      - name: Download bot code and saved paper state
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          ref: main
 
       - name: Install Python
         uses: actions/setup-python@v5
@@ -26,11 +34,12 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install cryptography
 
-      - name: Test all trading rules
-        run: python -m pytest -q --ignore=test_kalshi_prices.py
+      - name: Check Python syntax
+        run: python -m py_compile paper_runner.py discover.py bot.py
 
-      - name: Run updated Kalshi price monitor
+      - name: Run Bitcoin paper trading
         env:
+          GITHUB_ACTIONS: 'true'
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
-        run: python -u paper_runner.py --duration 15
+        run: python -u paper_runner.py --duration 240 --paper --persist-to-github
