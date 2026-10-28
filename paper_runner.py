@@ -17,6 +17,7 @@ from urllib.parse import quote
 
 import requests
 from bot import Kalshi, implied_ask, best_bid_depth
+from discover import discover_open, discover_series
 
 LOG = logging.getLogger('paper_runner')
 BASE = 'https://api.elections.kalshi.com/trade-api/v2'
@@ -72,17 +73,39 @@ def persist(state, path=STATE_FILE, push=False):
             raise RuntimeError('Unable to check state changes')
 
 
+
 def discover(client):
-    # Direct queries avoid broad market pagination; discover.py remains useful for catalog coverage.
-    markets = []
-    for series in ALL_SERIES:
-        data = client.get('/markets', {'series_ticker': series, 'status': 'open', 'limit': 200})
-        for m in data.get('markets', []):
-            if m.get('ticker') and m.get('status') == 'open':
-                markets.append(m)
-        if data.get('cursor'):
-            raise RuntimeError('Series pagination incomplete: ' + series)
+    """Discover active 15-minute markets using the existing discovery engine."""
+    series, catalog = discover_series(client, max_pages=10)
+
+    if not catalog["series_complete"]:
+        raise RuntimeError(
+            "Series catalog incomplete: " + str(catalog["series_error"])
+        )
+
+    stats = {}
+    markets = discover_open(
+        client,
+        max_pages=10,
+        page_size=200,
+        series_tickers=series,
+        stats=stats,
+    )
+
+    if stats["failed_series"] or stats["truncated_series"]:
+        raise RuntimeError(
+            "Market discovery incomplete: " + str(stats)
+        )
+
+    LOG.info(
+        "DISCOVERY series=%d scanned=%d found=%d",
+        stats["series_checked"],
+        stats["markets_scanned"],
+        len(markets),
+    )
+
     return markets
+
 
 
 class Pyth:
