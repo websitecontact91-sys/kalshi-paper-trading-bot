@@ -108,45 +108,70 @@ class KalshiCFPrices:
         self.key = serialization.load_pem_private_key(pem.encode('utf-8'), password=None)
         self.session = requests.Session()
 
+
     def price(self, series):
-    if series not in CF_INDEX_IDS:
-        raise ValueError('No verified CF price mapping for ' + series)
-    index_id = CF_INDEX_IDS[series]
+        if series not in CF_INDEX_IDS:
+            raise ValueError('No verified CF price mapping for ' + series)
+
+        index_id = CF_INDEX_IDS[series]
         path = '/trade-api/v2/cfbenchmarks/values'
         stamp = str(int(time.time() * 1000))
         msg = (stamp + 'GET' + path).encode('utf-8')
+
         if isinstance(self.key, ed25519.Ed25519PrivateKey):
             sig = self.key.sign(msg)
         else:
-            sig = self.key.sign(msg, padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=hashes.SHA256().digest_size), hashes.SHA256())
-        response = self.session.get('https://external-api.kalshi.com' + path,
-            params={'id': index_id}, headers={
+            sig = self.key.sign(
+                msg,
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=hashes.SHA256().digest_size
+                ),
+                hashes.SHA256()
+            )
+
+        response = self.session.get(
+            'https://external-api.kalshi.com' + path,
+            params={'id': index_id},
+            headers={
                 'KALSHI-ACCESS-KEY': self.key_id,
                 'KALSHI-ACCESS-TIMESTAMP': stamp,
                 'KALSHI-ACCESS-SIGNATURE': base64.b64encode(sig).decode('ascii'),
-            }, timeout=12)
+            },
+            timeout=12
+        )
         response.raise_for_status()
+
         payload = response.json().get('data', {}).get('payload')
         if not isinstance(payload, list):
-            raise ValueError('Unexpected BRTI payload')
+            raise ValueError('Unexpected CF price payload')
+
         observations = []
+
         for item in payload:
             try:
-                px, raw_ts = float(item['value']), float(item['time'])
+                px = float(item['value'])
+                raw_ts = float(item['time'])
                 ts = raw_ts / 1000 if raw_ts > 1e11 else raw_ts
+
                 if math.isfinite(px) and px > 0 and math.isfinite(ts):
                     observations.append((ts, px))
             except (KeyError, ValueError, TypeError, OverflowError):
-                pass
+                continue
+
         if not observations:
-            raise ValueError('No valid BRTI values')
+            raise ValueError('No valid CF prices for ' + index_id)
+
         ts, px = max(observations)
         age = time.time() - ts
+
         if not -5 <= age <= 15:
-            raise ValueError('BRTI price too old (age %.1fs)' % age)
+            raise ValueError(
+                'CF price too old for %s (age %.1fs)' % (index_id, age)
+            )
+
         return px, ts
+
 
 
 def fee_for(ask, count):
