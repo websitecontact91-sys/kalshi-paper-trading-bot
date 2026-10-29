@@ -144,3 +144,114 @@ def test_cli_stopped_exits_without_live_client(tmp_path, monkeypatch):
     monkeypatch.setattr(live_client,'LiveKalshiClient',forbidden)
     assert main(['--paper','--state',str(path)]) == 0
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('official_result,mode', [('yes', 'SCANNING'), ('no', 'STOPPED')])
+def test_configured_api_paper_quotes_enter_and_settle_without_ui_capture(tmp_path, official_result, mode):
+    """Controlled API-shaped data crosses the real adapter, engine and persistence.
+
+    These inputs exercise the authorized paper model; they are not a captured
+    retail quote or evidence of a live fill. Only one of the 30 series is open.
+    """
+    from live_client import LiveKalshiClient
+    from universe import UNIVERSE
+
+    close = 1793295000
+    clock = FakeClock(close - 61)
+    ticker, event_ticker = 'KXBTC15M-CONTROLLED', 'KXBTC15M-CONTROLLED-EVENT'
+    observed_market = {
+        'ticker': ticker, 'series_ticker': 'KXBTC15M', 'event_ticker': event_ticker,
+        'market_type': 'binary', 'notional_value_dollars': '1.0000',
+        'settlement_bounds_type': 'default', 'strike_type': 'greater_or_equal',
+        'floor_strike': '100', 'status': 'active', 'open_time': close - 900,
+        'close_time': close, 'yes_ask_dollars': '0.87', 'no_ask_dollars': '0.14',
+    }
+    book = {'orderbook_fp': {'no_dollars': [['0.13', '100.00']],
+                             'yes_dollars': [['0.86', '100.00']]}}
+
+    class ReadOnlyAPI:
+        def __init__(self):
+            self.discovered, self.settled = set(), False
+
+        def open_markets(self, series, now):
+            self.discovered.add(series)
+            return [copy.deepcopy(observed_market)] if series == 'KXBTC15M' else []
+
+        def series(self, series):
+            return {'ticker': series, 'fee_type': 'quadratic', 'fee_multiplier': '1',
+                    'settlement_sources': [{'name': 'CF Benchmarks',
+                                            'url': 'https://www.cfbenchmarks.com/'}]}
+
+        def event(self, event):
+            # Kalshi may omit unused event fee overrides; series terms apply.
+            return {'event_ticker': event, 'series_ticker': 'KXBTC15M'}
+
+        def market(self, requested):
+            assert requested == ticker
+            result = copy.deepcopy(observed_market)
+            if self.settled:
+                result.update(status='settled', result=official_result)
+            return result
+
+        def refresh_markets(self, tickers):
+            return {requested: self.market(requested) for requested in tickers}
+
+        def orderbook(self, requested):
+            assert requested == ticker
+            return copy.deepcopy(book)
+
+        def orderbooks(self, tickers):
+            return {requested: self.orderbook(requested) for requested in tickers}
+
+    class KalshiReferenceInputs:
+        def price(self, series):
+            assert series == 'KXBTC15M'
+            return D('101'), clock()
+
+        def close(self):
+            pass
+
+    api = ReadOnlyAPI()
+    client = LiveKalshiClient(Path(__file__).resolve().parents[1] / 'quote_policy.json',
+                             api=api, references=KalshiReferenceInputs(), clock=clock)
+    assert client.readiness_reasons == []
+    path = tmp_path / 'api-paper-state.json'
+
+    def durable(state):
+        return persist(state, path)
+
+    engine = PaperEngine(client, new_state(session_id='controlled-api-paper'),
+                         persist_state=durable, paper=True, clock=clock)
+    engine.tick()
+    assert engine.state['pending'] is None  # Still outside the final minute.
+    assert api.discovered == set(UNIVERSE)
+
+    clock.now = close - 59
+    engine.tick()
+    trade = load(path)['pending']
+    assert trade['ticker'] == ticker and trade['side'] == 'YES'
+    assert trade['quote_source'] == 'documented_fee_model'
+    assert trade['ui_parity_verified'] is False
+    assert trade['quote_policy_ready'] is True
+    assert trade['quote_policy_mode'] == 'documented_api'
+    assert 'quote_policy_verified' not in trade
+    assert D(trade['payout']) == D('5.69')
+    assert trade['displayed_multiplier'] == '1.14'
+    assert D('0') < D(trade['debit']) <= D('5')
+    assert D(trade['principal']) + D(trade['fees']) == D(trade['debit'])
+    assert engine.rounds[round_key(close)]['rejections']['KXDJIA15M:*'] == 'no_markets'
+
+    # Restart from the recorded pending position, then use an official result.
+    restarted = PaperEngine(client, load(path), persist_state=durable, paper=True, clock=clock)
+    api.settled, clock.now = True, close + 1
+    restarted.tick()
+    saved = load(path)
+    assert saved['pending'] is None and saved['mode'] == mode
+    assert len(saved['history']) == len(saved['rounds_traded']) == 1
+    expected = D('1000') - D(trade['debit'])
+    if official_result == 'yes':
+        expected += D(trade['payout'])
+    assert D(saved['balance']) == expected
+    restarted.tick()
+    assert restarted.state['pending'] is None
+    assert len(restarted.state['history']) == 1

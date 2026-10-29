@@ -4,8 +4,9 @@ Run: python validate_universe.py --output universe_report.csv \
          --json-output universe_report.json --wait 10
 
 The report evaluates quotes outside the entry window as well.  It never enters
-a trade or updates paper state, and a successful diagnostic exit is not a
-readiness assertion.
+a trade or updates paper state.  Operational readiness is the configured quote
+policy plus public discovery; unavailable or unusable markets are skipped
+individually.  The inventory does not certify deployment or schedule coverage.
 """
 import argparse
 import csv
@@ -31,7 +32,7 @@ CSV_FIELDS = (
     "compatible", "evaluated", "eligible", "entry_window_open", "current",
     "target", "last_observation_time", "observation_age_seconds", "evaluated_at", "close_time",
     "compatibility_reason", "reason", "yes_ask", "no_ask", "eligible_sides",
-    "quote_ready", "quote_blocker", "ui_parity_verified", "official_settlement_sources", "contract_terms_url",
+    "quote_ready", "quote_blocker", "quote_policy_mode", "ui_parity_verified", "official_settlement_sources", "contract_terms_url",
     "quote_details", "rejections",
 )
 
@@ -80,7 +81,7 @@ def _current_market(markets, now):
 
 
 def quote_parity_status(fixture_path=None):
-    """A screenshot arithmetic example does not satisfy this evidence gate."""
+    """Optional UI evidence diagnostic; API paper mode does not require it."""
     path = Path(fixture_path) if fixture_path else Path(__file__).parent / "tests/fixtures/sol_5usd_quote.json"
     if not path.is_file():
         return {"verified": False, "reason": "captured_SOL_raw_quote_fixture_missing"}
@@ -104,14 +105,14 @@ def _new_row(spec):
         "last_observation_time": "", "observation_age_seconds": None, "evaluated_at": "", "close_time": "",
         "compatibility_reason": "not_observed", "reason": "no_current_market",
         "yes_ask": "", "no_ask": "", "eligible_sides": [],
-        "quote_ready": False, "quote_blocker": "quote_policy_unavailable",
+        "quote_ready": False, "quote_blocker": "quote_policy_unavailable", "quote_policy_mode": "",
         "ui_parity_verified": False, "official_settlement_sources": [],
         "contract_terms_url": "", "quote_details": {}, "rejections": {},
     }
 
 
 def _policy_status(client):
-    """Use the same evidence gate as the live runner; no independent bypass."""
+    """Use the live policy's operational readiness, separately from UI parity."""
     policy = getattr(client, "policy", {})
     if not isinstance(policy, dict):
         policy = {}
@@ -119,11 +120,15 @@ def _policy_status(client):
     if not isinstance(reasons, (list, tuple)):
         reasons = ["invalid_client_readiness_report"]
     reasons = [str(reason) for reason in reasons if reason]
-    verified = policy.get("verified") is True and not reasons
-    reason = None if verified else str(policy.get("reason") or (reasons[0] if reasons else "quote_policy_unavailable"))
+    ready = policy.get("ready", policy.get("verified") is True) is True and not reasons
+    verified = policy.get("verified") is True
+    reason = None if ready else str(policy.get("reason") or (reasons[0] if reasons else "quote_policy_unavailable"))
     return {
-        "verified": verified, "reason": reason,
+        "ready": ready, "verified": verified, "reason": reason,
+        "mode": policy.get("mode", "captured_quote"),
+        "ui_parity_verified": policy.get("ui_parity_verified", verified) is True,
         "balance_precision": policy.get("balance_precision"),
+        "paper_balance_model": policy.get("paper_balance_model"),
         "readiness_reasons": reasons, "verification_source": "client.quote_policy",
     }
 
@@ -161,8 +166,9 @@ def build_report(client, *, now=None, wait=0, clock=time.time, sleeper=time.slee
     rows = []
     for series, spec in UNIVERSE.items():
         row = _new_row(spec)
-        row["quote_ready"] = policy["verified"]
+        row["quote_ready"] = policy["ready"]
         row["quote_blocker"] = policy["reason"]
+        row["quote_policy_mode"] = policy["mode"]
         metadata = {}
         try:
             metadata = client.series_metadata(series)
@@ -202,7 +208,7 @@ def build_report(client, *, now=None, wait=0, clock=time.time, sleeper=time.slee
         market = refreshed
         row["target"] = _decimal_text(market.get("floor_strike"))
         row["close_time"] = _iso(market.get("close_time"))
-        row["quote_ready"] = policy["verified"] and snapshot.get("quote_ready", True) is True
+        row["quote_ready"] = policy["ready"] and snapshot.get("quote_ready", True) is True
         if not row["quote_ready"]:
             row["quote_blocker"] = str(snapshot.get("quote_blocker") or policy["reason"] or "quote_evidence_unverified")
         current = snapshot.get("current")
@@ -286,33 +292,34 @@ def build_report(client, *, now=None, wait=0, clock=time.time, sleeper=time.slee
     if len(rows) != 30 or {row["ticker"] for row in rows} != set(UNIVERSE):
         raise ValueError("Report must retain exactly the 30 configured series")
     sha = source_sha if source_sha is not None else os.environ.get("PAPER_SOURCE_SHA", "")
-    # The real adapter validates its configured raw capture, the UI evidence and
-    # the documented model together.  A modeled quote's own ui_parity flag stays
-    # false, even after that policy is verified; do not confuse those concepts.
+    # Optional UI evidence is reported honestly but is not an entry gate in the
+    # owner's documented-API paper mode.  A model never becomes a UI capture.
     parity = dict(policy)
+    parity["required"] = policy["mode"] != "documented_api"
+    parity["verified"] = policy["ui_parity_verified"]
+    if not parity["required"] and not parity["verified"]:
+        parity["reason"] = "not_required_for_documented_api_paper_mode"
     if parity_fixture is not None:
         parity["independent_fixture_check"] = quote_parity_status(parity_fixture)
     blockers = []
-    for flag in ("configured", "available", "fresh", "compatible", "evaluated"):
+    market_diagnostics = []
+    for flag in ("available", "fresh", "compatible", "evaluated"):
         failing = [row["ticker"] for row in rows if not row[flag]]
         if failing:
-            blockers.append({"gate": flag, "series": failing})
-    if not parity["verified"]:
-        blockers.append({"gate": "historical_SOL_quote_UI_parity", "reason": parity["reason"]})
-    quote_blocked = [row["ticker"] for row in rows if row["available"] and not row["quote_ready"]]
-    if quote_blocked:
-        blockers.append({"gate": "quote_policy", "series": quote_blocked, "reasons": policy["readiness_reasons"]})
-    if not re.fullmatch(r"[0-9a-fA-F]{40}", str(sha)):
-        blockers.append({"gate": "source_sha", "reason": "exact_commit_SHA_missing"})
-    # This inventory cannot certify the workflow's same-SHA tests, official
-    # settlement scenarios, or several hours of schedule/chain coverage.
-    blockers.append({"gate": "deployment_and_schedule_evidence", "reason": "requires_same_commit_workflow_and_multihour_schedule_evidence"})
+            market_diagnostics.append({"check": flag, "series": failing, "blocks_other_markets": False})
+    if not policy["ready"]:
+        blockers.append({"gate": "quote_policy", "reason": policy["reason"], "reasons": policy["readiness_reasons"]})
     all_public_failed = discovery_failed or (
         not markets and all(series in discovery_errors for series in UNIVERSE)
     )
+    if all_public_failed:
+        blockers.append({"gate": "public_market_discovery", "reason": "all_public_discovery_failed"})
+    evidence_notes = [{"check": "deployment_and_schedule_evidence", "status": "reported_separately_not_an_entry_gate"}]
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", str(sha)):
+        evidence_notes.append({"check": "source_sha", "status": "exact_commit_SHA_missing"})
     dow = next(row for row in rows if row["ticker"] == "KXDJIA15M")
     return {
-        "schema": "kalshi-paper.universe-report.v1", "read_only": True,
+        "schema": "kalshi-paper.universe-report.v2", "read_only": True,
         "generated_at": _iso(report_now), "source_sha": sha,
         "code_fingerprint": os.environ.get("PAPER_CODE_FINGERPRINT"), "configured_count": 30,
         "max_observation_age_seconds": MAX_OBS_AGE_S,
@@ -328,6 +335,9 @@ def build_report(client, *, now=None, wait=0, clock=time.time, sleeper=time.slee
         "rows": rows, "counts": {flag: sum(bool(row[flag]) for row in rows) for flag in FLAGS},
         "dow_check": {key: dow[key] for key in ("ticker", "available", "current", "target", "units", "compatible", "compatibility_reason")},
         "quote_policy": policy, "quote_parity": parity, "ready": not blockers, "readiness_blockers": blockers,
+        "readiness_scope": "operational_quote_policy_and_public_discovery; market eligibility is checked independently",
+        "market_diagnostics": market_diagnostics, "evidence_notes": evidence_notes,
+        "all_markets_required_simultaneously": False,
         "errors": errors, "discovery_failed_series": sorted(str(key) for key in discovery_errors),
         "all_public_discovery_failed": all_public_failed, "diagnostic_exit_code": 1 if all_public_failed else 0,
     }
@@ -372,7 +382,8 @@ def main(argv=None, *, client_factory=None):
         write_report(report, args.output, args.json_output)
         print(csv_text(report), end="")
         print(json.dumps({key: report[key] for key in (
-            "source_sha", "counts", "exclusions", "dow_check", "ready", "readiness_blockers", "errors"
+            "source_sha", "counts", "exclusions", "dow_check", "ready", "readiness_scope",
+            "readiness_blockers", "market_diagnostics", "quote_policy", "errors"
         )}, sort_keys=True))
         return report["diagnostic_exit_code"]
     except Exception as exc:

@@ -16,6 +16,9 @@ from urllib.parse import urlparse
 from payout_quote import PayoutQuote, as_decimal
 
 NORMALIZED_SCHEMA = "kalshi-paper.normalized-quote.v1"
+# Kalshi's April 17, 2026 changelog made fractional trading unconditional for
+# active Market/EventChildMarket responses; July 9 removed the old enable flag.
+# https://docs.kalshi.com/changelog and FIXED_POINT_URL below.
 QUANTITY_STEP = Decimal("0.01")
 FEE_STEP = Decimal("0.000001")
 FEE_SCHEDULE_URL = "https://kalshi.com/docs/kalshi-fee-schedule.pdf"
@@ -206,12 +209,14 @@ def documented_taker_cost(ask, quantity, multiplier, balance_precision):
     Sources: https://kalshi.com/docs/kalshi-fee-schedule.pdf (July 7, 2026)
     and https://docs.kalshi.com/getting_started/fee_rounding.
     Fee model rounds up to 6dp; the total buyer debit then aligns upward to
-    the explicitly supplied account precision. Multi-fill UI parity is not claimed.
+    the explicitly supplied balance precision. A paper simulation can select
+    either documented member model without claiming the owner's account type.
+    Multi-fill UI parity is not claimed.
     """
     p, count, mult = (_number(ask, "ask"), _number(quantity, "quantity"),
                       _number(multiplier, "fee multiplier"))
     if balance_precision is None:
-        raise QuoteUnavailable("account balance precision is unknown")
+        raise QuoteUnavailable("model balance precision is unknown")
     precision = _number(balance_precision, "balance precision")
     if precision not in (Decimal("0.0001"), Decimal("0.01")):
         raise QuoteUnavailable("balance precision must be 0.0001 (direct) or 0.01 (non-direct)")
@@ -230,7 +235,8 @@ def build_modeled_quote(ask, available_quantity, series, event, market, *,
 
     The caller must supply that level's actual available quantity, not cumulative
     depth at different prices. This is a documented simulation, never a verified
-    retail UI quote. Missing account precision or fee metadata is a blocker.
+    retail UI quote. The caller selects a documented paper balance precision;
+    missing model precision or fee metadata prevents quoting this market.
     """
     price = _number(ask, "ask")
     depth = _number(available_quantity, "available quantity")
@@ -238,7 +244,7 @@ def build_modeled_quote(ask, available_quantity, series, event, market, *,
     if not 0 < price < 1 or depth <= 0 or not 0 < amount <= Decimal("5.00"):
         raise QuoteUnavailable("invalid ask, depth, or maximum $5 budget")
     if balance_precision is None:
-        raise QuoteUnavailable("account balance precision is unknown")
+        raise QuoteUnavailable("model balance precision is unknown")
     if market.get("market_type") != "binary":
         raise QuoteUnavailable("only verified binary markets are modeled")
     if _number(market.get("notional_value_dollars"), "contract notional") != Decimal("1"):
@@ -263,6 +269,7 @@ def build_modeled_quote(ask, available_quantity, series, event, market, *,
     return QuoteDetails(quote, quantity, fees, principal, "documented_fee_model", False,
                         {"fee_type": fee_type, "fee_multiplier": str(multiplier),
                          "fee_waived": waived, "balance_precision": str(balance_precision),
+                         "balance_precision_basis": "explicit_model_input",
                          "quantity_increment": str(QUANTITY_STEP),
                          "fill_assumption": "single_equivalent_taker_fill_at_one_price_level",
                          "fee_schedule_url": FEE_SCHEDULE_URL,

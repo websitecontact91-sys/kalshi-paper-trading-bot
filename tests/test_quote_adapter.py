@@ -129,6 +129,16 @@ def test_official_fee_rounding_worked_example():
     assert debit == D("0.06")
 
 
+def test_same_official_example_with_documented_direct_member_paper_precision():
+    # Same observed formula inputs as the official FCM example, with the
+    # separately documented direct-member $0.0001 balance grid.
+    principal, fees, debit = documented_taker_cost("0.55", "0.10", "2.1", "0.0001")
+    assert principal == D("0.055")
+    assert debit == D("0.0587")
+    assert fees == D("0.0037")
+    assert principal + fees == debit
+
+
 def test_event_override_takes_precedence_and_zero_multiplier_is_not_missing():
     q = modeled(changes=({}, {"fee_multiplier_override": "0"}, {}))
     assert q.evidence["fee_multiplier"] == "0"

@@ -1,4 +1,10 @@
-# Quote evidence and remaining validation
+# Quote provenance and paper-model assumptions
+
+The owner authorized API-based simulated quotes on 29 October 2026 without
+requiring a historical SOL capture or UI match. The configured `documented_api`
+policy permits paper entries based on observed Kalshi data and documented fees.
+The provenance distinctions below remain important: permission to simulate does
+not relabel a modeled quote as a captured or UI-verified quote.
 
 `sol_5usd_screenshot_arithmetic.json` preserves the owner's screenshot arithmetic.
 It is **not a captured Kalshi response** and does not prove live quote-adapter parity.
@@ -26,8 +32,11 @@ historical screenshot's actual inputs. No constant is adjusted to force the resu
 
 Model assumptions are recorded in the ledger: one equivalent taker fill at one
 observed price level, observed fee metadata, and explicitly supplied balance precision.
-Missing account precision or unknown fee metadata is an actionable blocker. The
-model does not claim the interface's multi-fill/rounding behavior has been captured.
+The configured paper account uses documented direct-member $0.0001 balance
+alignment as an explicit simulation convention. It does not assert anything about
+the owner's real account. An invalid precision setting or unknown fee metadata
+still blocks the affected quote. The model does not claim the interface's
+multi-fill/rounding behavior has been captured.
 
 Official sources checked 29 October 2026:
 
@@ -41,6 +50,6 @@ Official sources checked 29 October 2026:
 - https://docs.kalshi.com/getting_started/rfqs — RFQ quotes are a communications
   workflow, not a standalone retail preview endpoint. This bot does not create RFQs.
 
-Before claiming the owner's complete readiness gate is met, obtain a genuine
-corresponding quote capture or verified documented calculation with the original
-inputs and show its UI parity. An accounting unit test cannot substitute for this.
+Optional strict capture mode still requires genuine corresponding inputs and UI
+validation before it can claim parity. The deployed API-based paper mode does not
+require that extra proof; an accounting unit test is never described as a capture.

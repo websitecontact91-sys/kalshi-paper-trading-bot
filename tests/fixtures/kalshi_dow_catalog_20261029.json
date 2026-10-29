@@ -1,0 +1,68 @@
+{
+  "captured_at": "2026-10-29T19:12:16.065357+00:00",
+  "origin": "https://external-api.kalshi.com/trade-api/v2",
+  "responses": {
+    "series": {
+      "url": "https://external-api.kalshi.com/trade-api/v2/series/KXDJIA15M",
+      "status": 200,
+      "data": {
+        "series": {
+          "additional_prohibitions": [
+            "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+            "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+          ],
+          "categories": [
+            "Financials"
+          ],
+          "category": "Financials",
+          "contract_terms_url": "https://assets.kalshi.com/contract_terms/DOWJONES.pdf",
+          "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/INDEXVALUE.pdf",
+          "exchange_index": 0,
+          "fee_multiplier": 1,
+          "fee_type": "quadratic",
+          "frequency": "fifteen_min",
+          "last_updated_ts": "2026-10-23T17:58:06.960825Z",
+          "product_metadata": {
+            "scope": "Dow Jones"
+          },
+          "settlement_sources": [
+            {
+              "name": "For example, Google Finance",
+              "url": "https://www.google.com/finance/quote/.INX:INDEXSP?hl=en"
+            }
+          ],
+          "tags": [
+            "Indices"
+          ],
+          "ticker": "KXDJIA15M",
+          "title": "Dow Jones 15-minute"
+        }
+      }
+    },
+    "all_markets": {
+      "url": "https://external-api.kalshi.com/trade-api/v2/markets?series_ticker=KXDJIA15M&limit=100",
+      "status": 200,
+      "data": {
+        "cursor": "",
+        "markets": []
+      }
+    },
+    "open_markets": {
+      "url": "https://external-api.kalshi.com/trade-api/v2/markets?series_ticker=KXDJIA15M&status=open&limit=100",
+      "status": 200,
+      "data": {
+        "cursor": "",
+        "markets": []
+      }
+    },
+    "events": {
+      "url": "https://external-api.kalshi.com/trade-api/v2/events?series_ticker=KXDJIA15M&limit=100",
+      "status": 200,
+      "data": {
+        "cursor": "",
+        "events": [],
+        "milestones": []
+      }
+    }
+  }
+}

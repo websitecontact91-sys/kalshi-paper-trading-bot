@@ -6,25 +6,56 @@ from decimal import Decimal
 from pathlib import Path
 
 from kalshi_client import Kalshi, ask_and_depth, implied_ask
-from quote_adapter import QuoteUnavailable, build_modeled_quote, build_quote
+from quote_adapter import (FEE_ROUNDING_URL, FEE_SCHEDULE_URL, FIXED_POINT_URL,
+                           QuoteUnavailable, build_modeled_quote, build_quote)
 from reference_prices import ReferencePrices
 from timing import observation_fresh, timestamp
 from universe import UNIVERSE, check_compatibility
 
 
 def quote_policy(path):
-    """An unverified flag or a synthetic arithmetic fixture cannot unlock entries."""
-    result = {'balance_precision': None, 'verified': False, 'reason': 'quote_evidence_unverified'}
+    """Separate permission to simulate API prices from optional UI quote proof.
+
+    ``documented_api`` uses the explicitly selected paper balance model and
+    Kalshi's published fee rules. It does not identify the owner's account type
+    or claim retail UI parity. The optional ``captured_quote`` mode retains its
+    stricter audited SOL evidence checks.
+    """
+    result = {'mode': None, 'ready': False, 'balance_precision': None,
+              'verified': False, 'ui_parity_verified': False,
+              'reason': 'quote_evidence_unverified'}
     try:
         location = Path(path)
         config = json.loads(location.read_text())
         if not isinstance(config, dict):
             raise ValueError('quote policy must be an object')
+        mode = config.get('mode', 'captured_quote')
+        if mode not in ('documented_api', 'captured_quote'):
+            result['reason'] = 'unsupported_quote_policy_mode'
+            return result
+        result['mode'] = mode
         precision = config.get('balance_precision')
         if precision not in ('0.01', '0.0001'):
             result['reason'] = 'account_balance_precision_unverified'
             return result
         result['balance_precision'] = precision
+        if mode == 'documented_api':
+            model = config.get('paper_balance_model')
+            precisions = {'direct_member': '0.0001', 'non_direct_member': '0.01'}
+            if not isinstance(model, str) or precisions.get(model) != precision:
+                result['reason'] = 'paper_balance_model_precision_mismatch'
+                return result
+            if config.get('ui_parity_verified') is True:
+                result['reason'] = 'api_paper_mode_cannot_claim_ui_parity'
+                return result
+            result.update(ready=True, reason=None, paper_balance_model=model,
+                          evidence={'basis': 'documented_kalshi_api_paper_model',
+                                    'balance_precision_basis': 'explicit_simulation_convention',
+                                    'account_balance_precision_verified': False,
+                                    'fee_schedule_url': FEE_SCHEDULE_URL,
+                                    'fee_rounding_url': FEE_ROUNDING_URL,
+                                    'quantity_source_url': FIXED_POINT_URL})
+            return result
         if not config.get('evidence_file'):
             return result
         evidence = json.loads((location.parent / config['evidence_file']).read_text())
@@ -63,7 +94,8 @@ def quote_policy(path):
         if actual.quote.debit != Decimal('5.00') or actual.quote.payout != Decimal('5.69'):
             result['reason'] = 'required_sol_quote_parity_unverified'
             return result
-        result.update(verified=True, reason=None, evidence=actual.evidence)
+        result.update(ready=True, verified=True, ui_parity_verified=True,
+                      reason=None, evidence=actual.evidence)
     except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError, ArithmeticError) as exc:
         result['reason'] = 'invalid_quote_evidence:' + type(exc).__name__
     return result
@@ -81,7 +113,7 @@ class LiveKalshiClient:
 
     @property
     def readiness_reasons(self):
-        return [] if self.policy['verified'] else [self.policy['reason']]
+        return [] if self.policy['ready'] else [self.policy['reason']]
 
     def series_metadata(self, series, force=False):
         cached = self._series.get(series)
@@ -120,7 +152,8 @@ class LiveKalshiClient:
         result = {'market': market, 'current': None, 'observation_time': None,
                   'compatible': False, 'compatibility_reason': 'not_evaluated',
                   'quotes': {}, 'asks': {}, 'rejections': {},
-                  'quote_ready': self.policy['verified'], 'quote_blocker': self.policy['reason']}
+                  'quote_ready': self.policy['ready'], 'quote_blocker': self.policy['reason'],
+                  'quote_policy_mode': self.policy['mode']}
         series = market.get('series_ticker') or market['ticker'].split('-')[0]
         try:
             current, stamp = self.references.price(series)
@@ -212,7 +245,8 @@ class LiveKalshiClient:
                 'observation_time': None, 'compatible': False,
                 'compatibility_reason': 'market_missing_from_refresh', 'quotes': {}, 'asks': {},
                 'rejections': {s: 'market_missing_from_refresh' for s in ('YES', 'NO')},
-                'quote_ready': False, 'quote_blocker': 'market_missing_from_refresh'})
+                'quote_ready': False, 'quote_blocker': 'market_missing_from_refresh',
+                'quote_policy_mode': self.policy['mode']})
         self._statuses = {m['ticker']: m.get('status') for m in refreshed}
         return sorted(results, key=lambda s: s['market']['ticker'])
 

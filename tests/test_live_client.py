@@ -1,4 +1,4 @@
-"""Offline adapter tests. Synthetic policy records are never live quote evidence."""
+"""Offline adapter tests; API paper permission is separate from UI evidence."""
 
 import copy
 import hashlib
@@ -12,6 +12,7 @@ import pytest
 import live_client
 from live_client import LiveKalshiClient, quote_policy
 from quote_adapter import NORMALIZED_SCHEMA, build_modeled_quote
+from selection import Candidate, eligible
 from state_store import canonical_round_key
 from timing import round_key
 
@@ -133,6 +134,89 @@ def test_arithmetic_screenshot_fixture_cannot_unlock_live_entries(tmp_path):
     policy.write_text(json.dumps({"verified": True, "balance_precision": "0.01",
                                   "evidence_file": "synthetic.json"}))
     assert quote_policy(policy)["verified"] is False
+
+
+def configured_api_policy():
+    return Path(__file__).resolve().parents[1] / "quote_policy.json"
+
+
+def test_configured_api_policy_enables_paper_without_claiming_ui_or_account_proof():
+    policy = quote_policy(configured_api_policy())
+    assert policy["mode"] == "documented_api"
+    assert policy["ready"] is True and policy["reason"] is None
+    assert policy["verified"] is False and policy["ui_parity_verified"] is False
+    assert policy["paper_balance_model"] == "direct_member"
+    assert policy["balance_precision"] == "0.0001"
+    assert policy["evidence"]["account_balance_precision_verified"] is False
+    assert policy["evidence"]["balance_precision_basis"] == "explicit_simulation_convention"
+
+
+def test_api_paper_mode_does_not_require_a_sol_capture(tmp_path):
+    config = json.loads(configured_api_policy().read_text())
+    config["evidence_file"] = "intentionally-absent-sol-capture.json"
+    path = tmp_path / "policy.json"
+    path.write_text(json.dumps(config))
+    policy = quote_policy(path)
+    assert policy["ready"] is True
+    assert policy["verified"] is False and policy["ui_parity_verified"] is False
+
+
+@pytest.mark.parametrize("change", [
+    {"mode": "unknown"},
+    {"paper_balance_model": None},
+    {"paper_balance_model": []},
+    {"paper_balance_model": "non_direct_member"},
+    {"balance_precision": "0.01"},
+    {"balance_precision": 0.0001},
+    {"ui_parity_verified": True},
+])
+def test_invalid_api_policy_cannot_enable_paper_entries(tmp_path, change):
+    config = json.loads(configured_api_policy().read_text())
+    config.update(change)
+    path = tmp_path / "policy.json"
+    path.write_text(json.dumps(config))
+    policy = quote_policy(path)
+    assert policy["ready"] is False
+    assert policy["verified"] is False and policy["ui_parity_verified"] is False
+    assert policy["reason"]
+
+
+def test_configured_api_mode_produces_eligible_quote_from_live_adapter(adapter):
+    client, api, _, clock = adapter
+    client.policy = quote_policy(configured_api_policy())
+    snapshot = client.snapshot(api.current)
+    details = snapshot["quotes"]["YES"]
+    candidate = Candidate(api.current["ticker"], "YES", snapshot["asks"]["YES"],
+                          snapshot["current"], D("100.00"), details.quote, True)
+    assert client.readiness_reasons == []
+    assert snapshot["quote_ready"] is True
+    assert snapshot["quote_policy_mode"] == "documented_api"
+    assert eligible(candidate)
+    assert details.quote.debit == D("4.9954")
+    assert details.quote.payout == D("5.69")
+    assert details.quote.unused_cash == D("0.0046")
+    assert details.quote.displayed_multiplier == D("1.14")
+    assert details.source == "documented_fee_model"
+    assert details.ui_parity_verified is False
+    assert details.principal + details.fees == details.quote.debit <= D("5.00")
+
+
+@pytest.mark.parametrize("problem", ["stale", "incompatible", "missing_fees", "no_depth"])
+def test_api_permission_keeps_each_markets_data_checks(adapter, monkeypatch, problem):
+    client, api, refs, _ = adapter
+    client.policy = quote_policy(configured_api_policy())
+    if problem == "stale":
+        refs.age = 16
+    elif problem == "incompatible":
+        monkeypatch.setattr(live_client, "check_compatibility", lambda *args: (False, "wrong_instrument"))
+    elif problem == "missing_fees":
+        api.series_data.pop("fee_multiplier")
+    else:
+        api.book = {"orderbook_fp": {"yes_dollars": [], "no_dollars": []}}
+    snapshot = client.snapshot(api.current)
+    assert client.readiness_reasons == []  # One unavailable market never blocks all others.
+    assert snapshot["quotes"] == {}
+    assert snapshot["rejections"]["YES"]
 
 
 def synthetic_identity_policy(tmp_path):

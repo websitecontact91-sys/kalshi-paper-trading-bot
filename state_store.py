@@ -376,7 +376,8 @@ LEDGER_FIELDS = ["session_id", "event_id", "round_key", "ticker", "side", "index
                  "entered_at", "seconds_to_close", "ask", "probability", "probability_field", "current",
                  "underlying", "target", "distance_pct", "budget", "debit", "fees",
                  "quantity", "unused_cash", "payout", "exact_multiplier",
-                 "displayed_multiplier", "quote_source", "ui_parity_verified", "result",
+                 "displayed_multiplier", "quote_source", "quote_policy_mode", "quote_policy_ready",
+                 "ui_parity_verified", "result",
                  "pnl", "cash_payout", "settled_at", "balance_after", "state_after",
                  "source_sha"]
 

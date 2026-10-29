@@ -1,6 +1,8 @@
 {
-  "balance_precision": null,
+  "mode": "documented_api",
+  "paper_balance_model": "direct_member",
+  "balance_precision": "0.0001",
   "ui_parity_verified": false,
   "evidence_file": null,
-  "note": "The original SOL API quote and account balance precision were not supplied. Arithmetic fixtures are explicitly synthetic. Paper entries remain blocked until a genuine read-only quote capture verifies fee and UI parity; monitoring and controlled simulations remain available."
+  "note": "The owner authorized paper trading from Kalshi API market prices, order-book depth and fee metadata without requiring a matching retail screenshot or SOL quote capture. The simulation uses Kalshi's documented direct-member balance precision of $0.0001 as an explicit paper convention, not a claim about the owner's actual account. Modeled payouts do not claim retail UI parity. Each market still requires valid current Kalshi data, compatible reference and strike, supported fees, and sufficient observed depth."
 }

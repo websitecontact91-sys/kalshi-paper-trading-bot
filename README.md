@@ -4,15 +4,17 @@ This repository contains one active, read-only Kalshi paper simulator. It uses l
 
 ## Current deployment status
 
-The implementation includes Decimal payout accounting, a single selection engine, atomic paper state, durable Git persistence, official-result settlement, deterministic simulations and the requested scheduling workflow. **Code/test success alone is not a readiness certificate.**
+The implementation includes Decimal payout accounting, a single selection engine, atomic paper state, durable Git persistence, official-result settlement, deterministic simulations and the requested scheduling workflow.
 
-The deployment currently fails closed for new paper entries because `quote_policy.json` has no verified account balance precision or genuine SOL quote capture. The historical $5 → $5.69 → 1.14× arithmetic is covered by explicitly synthetic tests; it is not represented as an observed API response. Live monitoring, reporting and controlled simulations can run while that evidence is missing.
+On 29 October 2026 the owner authorized paper entries using Kalshi's live API data and published fee rules without reproducing a historical retail UI quote. `quote_policy.json` selects `documented_api` mode. A genuine SOL screenshot/API capture and verification of a real account's rounding are not prerequisites for this simulated session. The model records its assumptions and never claims UI parity or an actual execution.
 
-Dow's mapped US30 observation also remains incompatible until its instrument and units are established against the live contract. All 30 configured series remain visible in the universe report; a missing or incompatible series is never silently removed.
+All 30 configured series are checked repeatedly. Markets can appear and disappear during the day. An unavailable, stale or incompatible market is skipped for that scan; it does not prevent another market from qualifying. A later discovery refresh can bring an available market back into consideration. No extra price provider is used: current reference values, contract targets, market prices and final results come from Kalshi, including its hosted CF Benchmarks and Pyth feeds.
 
-Live Kalshi series metadata exposed two compatibility corrections after the initial deployment: instrument-specific `app.pyth.com` explorer links are now recognized and their decoded feed IDs checked, and WTI uses the official `Commodities.Index.PYTHOIL/USD` identifier instead of the older WTI1M mapping. A live observation from the corrected identifier is still required before that market can qualify.
+Dow stays on the configured list. Its matching Kalshi-hosted US30 reference can be used when an available contract's Kalshi source metadata and target units agree. Missing or contradictory data skips Dow only; the bot does not invent a target, rescale an unrelated instrument, or consult an external feed.
 
-Readiness additionally requires live same-source deployment evidence, several hours of measured final-minute coverage, and a recorded deliberate chain break recovered by a scheduled run. `scripts/schedule_evidence.py` reports missing evidence rather than inferring it from green workflow jobs.
+The corrected WTI mapping uses Kalshi's `Commodities.Index.PYTHOIL/USD` identifier. Instrument-specific `app.pyth.com` links in Kalshi's metadata are inspected as identifiers; they are not fetched as external price sources.
+
+Workflow reports record actual scans, closing-minute coverage, handoff gaps and source versions. `scripts/schedule_evidence.py` remains a diagnostic for sustained coverage and recovery; incomplete multi-hour evidence does not disable otherwise valid paper entries under the owner's updated operating rules. A green run alone does not guarantee uninterrupted coverage.
 
 ## Trading rules
 
@@ -31,13 +33,15 @@ Readiness additionally requires live same-source deployment evidence, several ho
 - A win permits the next unused round. A loss persists `STOPPED`; no automatic reset exists. Verified official cancellation/void refunds the actual debit, records zero P&L and resumes scanning.
 - No profit target, trade-count target, fixed session length or additional distance rule is imposed.
 
-## Quote evidence and fee modeling
+## API-based paper quotes and fee modeling
 
 `payout_quote.py` owns cash and multiplier arithmetic. It rejects binary floats for money. `quote_adapter.py` contains the only fee formula and quote-normalization implementation.
 
-The documented model uses the current quadratic taker formula, effective series/event terms, market fee waivers, positive 0.01-contract increments, six-decimal model-fee rounding and explicitly configured account balance precision. It sizes against actual depth at one observed price level and never assumes cumulative liquidity at a different price. Modeled quotes identify their assumptions and do not claim to be captured retail UI quotes.
+The documented model uses the current quadratic taker formula, effective series/event terms, market fee waivers, positive 0.01-contract increments and six-decimal model-fee rounding. The configured virtual account uses Kalshi's documented direct-member $0.0001 cash precision. This is an explicit simulation convention, not a claim that a particular real account has been inspected. Kalshi also documents a $0.01 convention for non-direct members; the policy supports an explicitly configured model for that case.
 
-Kalshi's live event responses omit unused fee-override fields. The adapter follows the official optional/nullable/omit-empty schema and inherits observed series fees only after binding the fetched event to its market and series. A captured public BTC/SOL/WTI metadata-and-book fixture verifies those actual response shapes. It is explicitly separate from the still-missing retail SOL payout quote evidence.
+The simulator sizes against actual depth at one observed price level and never assumes cumulative liquidity at a different price. It records principal, fees, actual debit, quantity, unused cash, exact payout and the displayed multiplier. Modeled quotes remain labeled `documented_fee_model` with `ui_parity_verified=false`. Operational permission is recorded separately as `quote_policy_ready` and `quote_policy_mode`.
+
+Kalshi's live event responses omit unused fee-override fields. The adapter follows the official optional/nullable/omit-empty schema and inherits observed series fees only after binding the fetched event to its market and series. A captured public BTC/SOL/WTI metadata-and-book fixture verifies those actual response shapes. Missing fee data, invalid quantities, inadequate depth, or unsupported contract terms still make that quote unavailable.
 
 Primary documentation:
 
@@ -46,9 +50,9 @@ Primary documentation:
 - [Fixed-point prices and quantities](https://docs.kalshi.com/getting_started/fixed_point_migration)
 - [Batch market order books](https://docs.kalshi.com/api-reference/market/get-multiple-market-orderbooks)
 
-No documented read-only retail $5 payout-preview endpoint was established during this change. RFQ functionality is a different mechanism and is not used. An authenticated response containing the required historical SOL quote was not supplied, so no `sol_5usd_quote.json` is fabricated.
+No documented read-only retail $5 payout-preview endpoint was established during this change. The selected paper mode uses observed executable prices and published fees instead. RFQ functionality is a different mechanism and is not used. No `sol_5usd_quote.json` is fabricated.
 
-To clear the evidence gate, supply an audited real capture using the internal `kalshi-paper.normalized-quote.v1` schema documented in `quote_adapter.build_quote`, preserving the raw JSON, source URL, GET method, timestamp, SHA256, and exact raw field paths. The quote's market ticker and side must be bound to raw fields. Include the model validation inputs from the observed market/book/fee metadata. The actual quote must match the model and the specified $5 debit / $5.69 payout / displayed 1.14× UI example. `quote_policy.json` must point to that evidence and state the verified account precision (`0.0001` or `0.01`). A boolean alone cannot unlock entries.
+An optional strict capture-validation mode remains available for later investigation of retail UI parity. `quote_adapter.build_quote` verifies an audited internal `kalshi-paper.normalized-quote.v1` capture against preserved raw JSON, a Kalshi GET source URL, timestamp, SHA256, and exact field paths. That optional validation is separate from the configured API-based paper mode. Setting a purported verification boolean does not turn synthetic data into a genuine capture.
 
 The fixture in `tests/fixtures/sol_5usd_screenshot_arithmetic.json` is an arithmetic regression only. The README in that directory explains its provenance limits. Synthetic parser fixtures created by tests are never installed as live evidence.
 
@@ -104,9 +108,9 @@ python simulate.py --scenario late_expiry
 python simulate.py --scenario delayed_result
 ```
 
-They inject a fake client and clock into the real `PaperEngine`, use temporary state, and assert balances, entry counts, settlement, restart behavior and loss stops. They do not access the deployed session or prove live quote parity.
+They inject a fake client and clock into the real `PaperEngine`, use temporary state, and assert balances, entry counts, settlement, restart behavior and loss stops. Additional integration tests run the real live-client adapter with controlled API-shaped inputs through paper entry, persistence, restart and official-result settlement. These tests do not access the deployed session or claim retail UI parity.
 
-`universe_report.csv` retains one row for each of the 30 configured series, with separate configured/available/fresh/compatible/evaluated/eligible flags, units, identifiers, observed target/current values, freshness, rejection reasons and entry-window status. A successful report-generation exit is not a declaration that all 30 series are ready.
+`universe_report.csv` retains one row for each of the 30 configured series, with separate configured/available/fresh/compatible/evaluated/eligible flags, units, identifiers, observed target/current values, freshness, rejection reasons and entry-window status. Missing markets are per-series skips. The report distinguishes policy/configuration blockers from those temporary skips; it never requires all 30 series to be open or eligible simultaneously.
 
 Collect scheduling evidence using current workflow history and downloaded diagnostics:
 
@@ -115,7 +119,7 @@ gh run list --workflow main.yml --limit 100 --json databaseId,event,status,concl
 python scripts/schedule_evidence.py --runs workflow_runs.json --coverage downloaded-diagnostics --chain-break-at '<observed ISO timestamp>' --cancelled-run-id '<actual deliberately cancelled pending run ID>' --output schedule_evidence.json
 ```
 
-The analyzer requires three hours by default, observed schedule events, bounded inter-scan gaps, final-minute coverage, and cancellation/recovery tied to the actual scheduled run. Missing evidence produces `NOT_VERIFIED` and exit 2. It does not certify quote accuracy.
+The diagnostic analyzer requires three hours by default, observed schedule events, bounded inter-scan gaps, final-minute coverage, and cancellation/recovery tied to the actual scheduled run. Missing evidence produces `NOT_VERIFIED` and exit 2. That result describes the supplied reliability evidence; it is not a runtime paper-entry gate and does not certify quote accuracy.
 
 ## Rule ownership and tests
 

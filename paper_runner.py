@@ -114,7 +114,7 @@ class PaperEngine:
                                               as_decimal(market['floor_strike']), quote.quote, True)
                         reason = rejection_reason(candidate)
                         if reason is None and not snapshot.get('quote_ready', False):
-                            reason = snapshot.get('quote_blocker') or 'quote_evidence_unverified'
+                            reason = snapshot.get('quote_blocker') or 'quote_policy_unavailable'
                         if reason is None:
                             result.append((candidate, snapshot, quote))
                     except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
@@ -224,7 +224,8 @@ class PaperEngine:
                             else chosen.side.lower() + '_ask'),
                         'current': str(chosen.current), 'target': str(chosen.target),
                         'distance_pct': str(distance_pct(chosen)), 'source_sha': self.source,
-                        'quote_policy_verified': bool(snapshot['quote_ready'])}
+                        'quote_policy_ready': bool(snapshot['quote_ready']),
+                        'quote_policy_mode': snapshot.get('quote_policy_mode', 'unspecified')}
                 except Exception as exc:
                     self._reject(key, candidate.ticker, candidate.side, 'revalidation_failed:' + type(exc).__name__)
                     continue

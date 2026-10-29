@@ -173,10 +173,14 @@ def test_conflicting_official_explorer_identifiers_fail_closed():
     )
 
 
-def test_recognized_dow_feed_link_does_not_establish_matching_live_instrument():
-    official = {"settlement_sources": [{"name": "Pyth - US30", "url": "https://app.pyth.com/explore/Equity.Index.US30%2FUSD"}]}
-    assert check_compatibility(market("KXDJIA15M"), D("101"), official) == (
-        False, "dow_instrument_units_unverified"
+def test_matching_official_dow_feed_can_be_used_without_permanent_manual_block():
+    # Synthetic contract example using the exact US30 identifier documented by
+    # Kalshi; this does not assert an open Dow contract was observed in production.
+    official = {"ticker": "KXDJIA15M", "settlement_sources": [{
+        "name": "Pyth - US30", "url": "https://app.pyth.com/explore/Equity.Index.US30%2FUSD",
+    }]}
+    assert check_compatibility(market("KXDJIA15M", floor_strike="43000"), D("43001"), official) == (
+        True, "verified_binary_above_contract_and_official_source"
     )
 
 
@@ -188,7 +192,7 @@ def test_no_arbitrary_ordinary_market_distance_gate(current):
 def test_dow_name_or_fresh_price_does_not_prove_instrument_match():
     good_scale = market("KXDJIA15M", floor_strike="43000")
     assert check_compatibility(good_scale, D("43001"), metadata("KXDJIA15M")) == (
-        False, "dow_instrument_units_unverified"
+        False, "dow_official_reference_identifier_unavailable"
     )
     compatible, reason = check_compatibility(good_scale, D("430"), metadata("KXDJIA15M"))
     assert not compatible
@@ -256,7 +260,9 @@ def test_every_available_series_is_evaluated_outside_entry_window():
     }
     assert all(not row["entry_window_open"] for row in result["rows"])
     assert result["diagnostic_exit_code"] == 0
-    assert not result["ready"]
+    assert result["ready"]  # One incompatible market does not block the others.
+    assert not result["readiness_blockers"]
+    assert result["all_markets_required_simultaneously"] is False
     assert result["quote_parity"]["verified"]  # injected policy stub only
     assert len(result["exclusions"]) == 5
     assert not result["dow_check"]["compatible"]
@@ -306,15 +312,19 @@ def test_all_public_series_failures_exit_one_but_keep_rows():
     assert result["diagnostic_exit_code"] == 1
     assert result["all_public_discovery_failed"]
     assert len(result["rows"]) == 30
+    assert not result["ready"]
 
 
-def test_partial_discovery_failure_is_a_diagnostic_not_a_ready_pass():
+def test_partial_discovery_failure_does_not_block_available_usable_markets():
     client = FakeClient()
     client.markets = [market()]
     client.discovery_errors = dict.fromkeys(set(UNIVERSE) - {"KXBTC15M"}, "request_failed")
     result = report(client)
     assert result["diagnostic_exit_code"] == 0
-    assert not result["ready"]
+    assert result["ready"]
+    assert not result["readiness_blockers"]
+    assert result["counts"]["eligible"] == 1
+    assert all(item["blocks_other_markets"] is False for item in result["market_diagnostics"])
     assert len(result["rows"]) == 30
 
 

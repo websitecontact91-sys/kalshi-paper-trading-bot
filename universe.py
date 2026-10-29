@@ -87,7 +87,7 @@ _INSTRUMENTS_AND_UNITS = {
     "KX5YRRATE15M": ("US 5-year Treasury yield", "percentage points"),
     "KX10YRRATE15M": ("US 10-year Treasury yield", "percentage points"),
     "KX30YRRATE15M": ("US 30-year Treasury yield", "percentage points"),
-    "KXDJIA15M": ("Dow Jones Industrial Average", "index points (unverified feed match)"),
+    "KXDJIA15M": ("Dow Jones Industrial Average", "native US30 index quote; no rescaling"),
 }
 
 UNIVERSE = {
@@ -195,11 +195,12 @@ def _source_vendor(metadata):
 def check_compatibility(market, current, series_metadata):
     """Return (compatible, reason); unknown contract facts never imply a pass.
 
-    Dow is deliberately held unverified: US30 in a feed name does not establish
-    that its instrument or denomination is the live Dow contract's reference.
-    A future relaxation needs captured matching contract/feed evidence.  Its
-    ratio check diagnoses gross scale errors, never constrains ordinary-market
-    distance eligibility.
+    Kalshi documents Equity.Index.US30/USD as the Dow Jones Industrial Average
+    feed at https://docs.kalshi.com/websockets/pyth-value.  A live Dow contract
+    may therefore pass when its own official source identifies that feed and
+    its native strike is consistent with the observation.  This is a per-market
+    check: a missing/mismatched Dow contract never blocks other series.  No
+    external source is queried and no value is rescaled to manufacture a match.
     """
     series = series_of(market)
     if series not in UNIVERSE:
@@ -225,7 +226,6 @@ def check_compatibility(market, current, series_metadata):
         ratio = reference / target
         if ratio <= Decimal("0.1") or ratio >= Decimal("10"):
             return False, "dow_scale_mismatch: reference/target=" + str(ratio)
-        return False, "dow_instrument_units_unverified"
     metadata = series_metadata
     if isinstance(metadata, dict) and isinstance(metadata.get("series"), dict):
         metadata = metadata["series"]
@@ -247,6 +247,8 @@ def check_compatibility(market, current, series_metadata):
         }
         if source_ids and source_ids != {UNIVERSE[series]["source_id"]}:
             return False, "official_reference_identifier_mismatch"
+        if series == "KXDJIA15M" and not source_ids:
+            return False, "dow_official_reference_identifier_unavailable"
     return True, "verified_binary_above_contract_and_official_source"
 
 
