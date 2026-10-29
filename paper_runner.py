@@ -261,7 +261,7 @@ def evaluate_market(m, px, current_time, book, balance):
             if not 1.10 <= gross <= 1.20:
                 continue
             depth = best_bid_depth(book, side, ask)
-            if depth < 1:
+            if depth < math.ceil(payout):
                 continue
             # Fixed $5 paper notional. Kalshi real orders require whole contracts;
             # this fractional exposure is a mathematical simulation only.
