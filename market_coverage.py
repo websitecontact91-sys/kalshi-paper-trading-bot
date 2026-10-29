@@ -8,6 +8,7 @@ import json
 
 from bot import Kalshi
 from discover import BASE, discover_open, discover_series
+from kalshi_pyth import PYTH_INDEX_IDS
 
 CF = {
     "KXBTC15M": "BRTI",
@@ -34,8 +35,8 @@ PYTH_UNVERIFIED = {
 def classification(series):
     if series in CF:
         return "CF_ENDPOINT_TESTED"
-    if series in PYTH_UNVERIFIED:
-        return "PYTH_UNAVAILABLE_OR_UNVERIFIED"
+    if series in PYTH_INDEX_IDS:
+        return "KALSHI_PYTH_STREAM_MAPPED_UNVERIFIED_CONTRACT"
     return "NO_VERIFIED_SETTLEMENT_FEED"
 
 
@@ -70,7 +71,7 @@ def main():
             "contract_terms_url": details.get("contract_terms_url"),
             "open_markets": len(by_series[name]),
             "classification": classification(name),
-            "reference": CF.get(name) or PYTH_UNVERIFIED.get(name),
+            "reference": CF.get(name) or PYTH_INDEX_IDS.get(name),
             "sample_ticker": by_series[name][0].get("ticker") if by_series[name] else None,
         }
         report["series"].append(item)
