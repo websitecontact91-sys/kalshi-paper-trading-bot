@@ -20,6 +20,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519, padding
 from bot import Kalshi, implied_ask, best_bid_depth
 from discover import discover_open, discover_series
 from market_coverage import classification
+from kalshi_pyth import KalshiPythPrices, PYTH_INDEX_IDS
 
 LOG = logging.getLogger('paper_runner')
 BASE = 'https://api.elections.kalshi.com/trade-api/v2'
@@ -280,6 +281,7 @@ def loop(args):
         if not STATE_FILE.exists():
             persist(state, push=True)
     cf = KalshiCFPrices()
+    pyth = KalshiPythPrices()
     started = time.monotonic()
     cached_markets = []
     next_discovery = 0.0
@@ -315,12 +317,12 @@ def loop(args):
                 if state.get('trade') and str(state['trade'].get('round_id')) == round_id(m['close_time']):
                     continue
                 series = m.get('series_ticker') or m['ticker'].split('-')[0]
-                if series not in CF_INDEX_IDS:
+                if series not in CF_INDEX_IDS and series not in PYTH_INDEX_IDS:
                     unsupported[series] = classification(series)
                     continue
                 try:
                     if series not in price_cache:
-                        price_cache[series] = cf.price(series)
+                        price_cache[series] = (cf.price(series) if series in CF_INDEX_IDS else pyth.price(series))
                     px, ts = price_cache[series]
                     fresh = client.market(m['ticker'])
                     book = client.orderbook(m['ticker'])
