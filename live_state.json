@@ -202,7 +202,7 @@
     "execution": null,
     "fee_multiplier": "1",
     "observation_time": 1793312938.0,
-    "order_id": null,
+    "order_id": "01a189c7-eb98-777e-a380-b189e7d41029",
     "prepared_at": "2026-10-29T22:29:01.688243+00:00",
     "probability_field": "kalshi_orderbook:1-best_YES_bid",
     "quantity": "1.00",
@@ -215,7 +215,8 @@
     "series_ticker": "KXBNB15M",
     "side": "NO",
     "source_sha": "1face99419d83668c05cc3f20104695010cd10f1",
-    "stage": "INTENT",
+    "stage": "ACKNOWLEDGED",
+    "submitted_at": "2026-10-29T22:29:03.124886+00:00",
     "target": "703.15",
     "ticker": "KXBNB15M-26OCT291830-30",
     "worst_case_debit": "1.00"
