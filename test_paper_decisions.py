@@ -183,3 +183,12 @@ def test_freshness_at_selection():
     assert not candidate_is_fresh({'index_time': 100}, 116)
     assert not candidate_is_fresh({'index_time': 100}, 94)
     assert not candidate_is_fresh({}, 110)
+
+
+def test_legacy_round_id_cannot_bypass_global_limit():
+    from paper_runner import prior_round_matches, round_id
+    close = '2030-01-01T00:15:00Z'
+    assert prior_round_matches({'round_id': close}, close)
+    assert prior_round_matches({'round_id': round_id(close)}, close)
+    assert prior_round_matches({'close_time': close}, close)
+    assert not prior_round_matches({'round_id': '2030-01-01T00:30:00Z'}, close)
