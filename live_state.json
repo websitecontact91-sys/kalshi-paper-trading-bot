@@ -1,0 +1,16 @@
+{
+  "account_cash": "19.8499",
+  "account_cash_checked_at": "2026-10-29T21:37:25.596052+00:00",
+  "account_scope": "production:0:31c8bad33d4eb70d",
+  "attempted_rounds": [],
+  "attempts": [],
+  "funds_policy": "continue_until_insufficient_funds.v1",
+  "halt_reason": null,
+  "history": [],
+  "mode": "SCANNING",
+  "pending": null,
+  "realized_pnl": "0.00",
+  "schema": "kalshi-live.v1",
+  "session_id": "2c127708-6f99-4d8c-8197-4de798ce4966",
+  "stop_reason": null
+}
