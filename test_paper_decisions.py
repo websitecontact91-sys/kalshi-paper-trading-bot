@@ -18,7 +18,7 @@ def market(yes_ask=0.85, no_ask=0.15, target=100):
         'series_ticker': 'KXBTC15M',
         'status': 'open',
         'strike_type': 'greater_or_equal',
-        'floor_strike': target,\n        'verified_display_payout_multiplier': 1.14,
+        'floor_strike': target,\n        '_kalshi_series_fee_multiplier': 1.0,
         'close_time': '2030-01-01T00:15:00Z',
         'yes_ask_dollars': str(yes_ask),
         'no_ask_dollars': str(no_ask),
@@ -249,8 +249,8 @@ def test_exact_five_dollar_fractional_paper_notional():
     assert len(trades) == 1
     trade = trades[0]
     assert trade['cost'] == 5.0
-    assert trade['fee_reserve'] == 0.0
-    assert abs(trade['count'] - 5.0 * 1.14) < 1e-10
+    assert trade['fee_reserve'] > 0.0
+    assert 5.0 * 1.10 <= trade['count'] <= 5.0 * 1.20
     assert trade['count'] != int(trade['count'])  # Hypothetical fractional exposure.
 
 
@@ -267,7 +267,7 @@ def test_exact_five_dollar_paper_win_and_loss():
     win['trade'] = trade.copy()
     win['mode'] = 'WAITING_FOR_SETTLEMENT'
     assert settle(win, Outcome('yes'))
-    assert win['balance'] == round(995.0 + 5.0 * 1.14, 8)
+    assert win['balance'] == round(995.0 + trade['count'], 8)
     assert win['mode'] == 'SCANNING'
     loss = default_state()
     loss['balance'] -= 5.0
@@ -280,13 +280,21 @@ def test_exact_five_dollar_paper_win_and_loss():
 
 def test_missing_verified_kalshi_payout_fails_closed():
     m = market()
-    del m['verified_display_payout_multiplier']
+    del m['_kalshi_series_fee_multiplier']
     with patch('paper_runner.best_bid_depth', return_value=20):
         assert evaluate_market(m, 105, 1893456845.0, orderbook(), 1000) == []
 
 
 def test_out_of_range_display_payout_fails_closed():
     m = market()
-    m['verified_display_payout_multiplier'] = 1.21
+    m['_kalshi_series_fee_multiplier'] = 100.0
     with patch('paper_runner.best_bid_depth', return_value=20):
         assert evaluate_market(m, 105, 1893456845.0, orderbook(), 1000) == []
+
+
+def test_published_fee_quote_is_within_budget():
+    from paper_runner import fee_inclusive_quote
+    payout, fee = fee_inclusive_quote(0.87, 1.0)
+    assert payout * 0.87 + fee <= 5.00000001
+    assert 5.5 <= payout <= 6.0
+    assert fee > 0
