@@ -45,6 +45,17 @@ def main():
             msg=data.get("msg",{})
             received.append({"type":typ,"index_id":msg.get("index_id"),"underlying_ticker":msg.get("underlying_ticker"),"timestamp":msg.get("source_ts_ms")})
     ws.close()
+    # Probe each mapped CF index using the same authenticated REST client as the bot.
+    from paper_runner import CF_INDEX_IDS, KalshiCFPrices
+    cf = KalshiCFPrices()
+    checks = {}
+    for series in CF_INDEX_IDS:
+        try:
+            px, ts = cf.price(series)
+            checks[series] = {"status": "FRESH", "age_seconds": round(time.time()-ts, 2)}
+        except Exception as exc:
+            checks[series] = {"status": "UNAVAILABLE", "reason": str(exc)[:180]}
+    print("KALSHI_CF_REST_AUDIT "+json.dumps(checks),flush=True)
     print("KALSHI_REFERENCE_AUDIT "+json.dumps({"subscriptions":subs,"messages":received},default=str),flush=True)
 
 if __name__=="__main__":
