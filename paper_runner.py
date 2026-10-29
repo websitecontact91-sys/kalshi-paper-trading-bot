@@ -163,6 +163,21 @@ def round_id(close_time):
     return str(math.ceil(stamp / 900))
 
 
+def prior_round_matches(trade, close_time):
+    """Support both legacy ISO close_time and new numeric round identifiers.
+
+    Older saved paper_state.json entries used raw ISO timestamps as round_id.
+    Never allow that older format to bypass the one-trade-per-round rule.
+    """
+    raw = trade.get('round_id') or trade.get('close_time')
+    if raw is None:
+        return False
+    try:
+        return round_id(raw) == round_id(close_time) if isinstance(raw, str) and ('T' in raw or '-' in raw) else str(raw) == round_id(close_time)
+    except (ValueError, TypeError, OverflowError):
+        return False
+
+
 def candidate_is_fresh(candidate, now, max_age=15):
     """Reject stale reference quotes before simulated execution."""
     ts = candidate.get('index_time')
@@ -288,7 +303,7 @@ def loop(args):
                 close = parse_time(m.get('close_time'))
                 if close is None or not 0 < close - time.time() <= 60:
                     continue
-                if any(str(t.get('round_id')) == round_id(m['close_time']) for t in state['history']):
+                if any(prior_round_matches(t, m['close_time']) for t in state['history']):
                     continue
                 if state.get('trade') and str(state['trade'].get('round_id')) == round_id(m['close_time']):
                     continue
