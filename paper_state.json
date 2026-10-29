@@ -1,5 +1,5 @@
 {
-  "balance": "997.1055",
+  "balance": "992.1101",
   "history": [
     {
       "ask": "0.9",
@@ -143,8 +143,52 @@
   "migration": {
     "from_version": 1
   },
-  "mode": "SCANNING",
-  "pending": null,
+  "mode": "WAITING_FOR_SETTLEMENT",
+  "pending": {
+    "ask": "0.8700",
+    "budget": "5.00",
+    "close_time": "2026-10-29T20:15:00Z",
+    "current": "1490.70000000",
+    "debit": "4.9954",
+    "displayed_multiplier": "1.14",
+    "distance_pct": "0.03892303975518750167771723083",
+    "entered_at": "2026-10-29T20:14:02.871708+00:00",
+    "event_id": "legacy-c2dd93b0165313d96d6574cd:1992561",
+    "exact_multiplier": "1.139047924090162949913920807",
+    "fees": "0.045100",
+    "index_time": 1793304842.0,
+    "payout": "5.69",
+    "principal": "4.950300",
+    "probability": "0.8700",
+    "probability_field": "kalshi_orderbook:1-best_NO_bid",
+    "quantity": "5.69",
+    "quote_evidence": {
+      "balance_precision": "0.0001",
+      "balance_precision_basis": "explicit_model_input",
+      "fee_multiplier": "1",
+      "fee_rounding_url": "https://docs.kalshi.com/getting_started/fee_rounding",
+      "fee_schedule_url": "https://kalshi.com/docs/kalshi-fee-schedule.pdf",
+      "fee_type": "quadratic",
+      "fee_waived": false,
+      "fill_assumption": "single_equivalent_taker_fill_at_one_price_level",
+      "quantity_increment": "0.01",
+      "quantity_source_url": "https://docs.kalshi.com/getting_started/fixed_point_migration"
+    },
+    "quote_policy_mode": "documented_api",
+    "quote_policy_ready": true,
+    "quote_source": "documented_fee_model",
+    "round_id": "1992561",
+    "round_key": "1992561",
+    "seconds_to_close": 57.128291606903076,
+    "series_ticker": "KXPLATINUM15M",
+    "side": "YES",
+    "source_sha": "de2a24afcbf2f5f920d057a6ae344088041c5d1d",
+    "summary_ask": "0.9300",
+    "target": "1490.12",
+    "ticker": "KXPLATINUM15M-26OCT291615-15",
+    "ui_parity_verified": false,
+    "unused_cash": "0.0046"
+  },
   "round_reports": [
     {
       "code_fingerprint": "git-tree-state-excluded-v1:sha256:3e38edb51a94d92bff659bc61abef1fb5f87b7b52f7206754804c06d3594580b",
@@ -772,7 +816,8 @@
   "rounds_traded": [
     "1992550",
     "1992559",
-    "1992560"
+    "1992560",
+    "1992561"
   ],
   "schema": 1,
   "session_id": "legacy-c2dd93b0165313d96d6574cd"
