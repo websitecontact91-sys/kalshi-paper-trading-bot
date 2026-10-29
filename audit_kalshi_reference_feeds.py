@@ -19,7 +19,7 @@ def auth():
     return [f"KALSHI-ACCESS-KEY: {key_id}",f"KALSHI-ACCESS-TIMESTAMP: {stamp}",f"KALSHI-ACCESS-SIGNATURE: {base64.b64encode(sig).decode()}"]
 
 def main():
-    ws = websocket.create_connection("wss://external-api.kalshi.com/trade-api/ws/v2",header=auth(),timeout=8)
+    ws = websocket.create_connection("wss://external-api-ws.kalshi.com/trade-api/ws/v2",header=auth(),timeout=8)
     subs = {}
     for id, channel in [(1,"cfbenchmarks_value"),(2,"pyth_value")]:
         ws.send(json.dumps({"id":id,"cmd":"subscribe","params":{"channels":[channel]}}))
