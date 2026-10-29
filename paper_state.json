@@ -351,7 +351,7 @@
   "migration": {
     "from_version": 1
   },
-  "mode": "STOPPED",
+  "mode": "SCANNING",
   "pending": null,
   "round_reports": [
     {
@@ -1565,5 +1565,7 @@
     "1992564"
   ],
   "schema": 1,
-  "session_id": "legacy-c2dd93b0165313d96d6574cd"
+  "session_id": "legacy-c2dd93b0165313d96d6574cd",
+  "stop_policy": "insufficient_funds_v1",
+  "stop_reason": null
 }
