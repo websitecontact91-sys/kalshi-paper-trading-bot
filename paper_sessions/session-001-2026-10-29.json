@@ -1,0 +1,28 @@
+{
+  "balance": 995.2,
+  "history": [
+    {
+      "ask": 0.86,
+      "close_time": "2026-10-29T15:15:00Z",
+      "cost": 4.8,
+      "count": 5,
+      "distance_pct": 0.06752464403067354,
+      "entered_at": 1793286847.1359117,
+      "fee_reserve": 0.5,
+      "gross_payout": 1.1627906976744187,
+      "index_time": 1793286841.0,
+      "pnl": -4.8,
+      "result": "yes",
+      "round_id": "1992541",
+      "settled_at": 1793286930.5096266,
+      "side": "NO",
+      "target": 109.56,
+      "ticker": "KXBRENT15M-26OCT291115-15",
+      "underlying": 109.48602,
+      "won": false
+    }
+  ],
+  "mode": "STOPPED",
+  "trade": null,
+  "version": 1
+}
