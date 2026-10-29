@@ -1,11 +1,6 @@
-
 name: Kalshi 15-minute paper trading
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/main.yml'
   workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
@@ -14,6 +9,8 @@ permissions:
   contents: write
   actions: write
 
+# GitHub Actions permits one running and at most one pending run per group.
+# Do not self-dispatch: cron is the only recurring trigger, every five minutes.
 concurrency:
   group: kalshi-paper-state
   cancel-in-progress: false
@@ -23,32 +20,59 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 13
     steps:
-      - name: Queue next run (keeps the chain alive)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: gh workflow run main.yml --ref main
-
       - name: Download bot code and saved paper state
         uses: actions/checkout@v4
         with:
           persist-credentials: true
           ref: main
 
+      - name: Check permanent stop before installing dependencies
+        id: state
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path('paper_state.json')
+          if not path.exists():
+              raise SystemExit('Missing persistent paper_state.json; refusing to start')
+          state = json.loads(path.read_text())
+          mode = state.get('mode')
+          if mode not in ('SCANNING', 'WAITING_FOR_SETTLEMENT', 'STOPPED'):
+              raise SystemExit('Invalid paper mode; refusing to start')
+          if mode != 'STOPPED' and any(t.get('won') is False for t in state.get('history', [])):
+              raise SystemExit('Recorded loss but mode not STOPPED; refusing to start')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write('stopped=' + ('true' if mode == 'STOPPED' else 'false') + '\n')
+          print('Saved paper mode:', mode)
+          PY
+
+      - name: Disable scheduled workflow after permanent stop
+        if: steps.state.outputs.stopped == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          echo 'Permanent paper stop: disabling workflow to prevent further scheduled runs.'
+          gh workflow disable main.yml
+
       - name: Install Python
+        if: steps.state.outputs.stopped == 'false'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
 
       - name: Install dependencies
+        if: steps.state.outputs.stopped == 'false'
         run: |
           python -m pip install -r requirements.txt
           python -m pip install cryptography
 
-      - name: Run persistent simulated paper trading
+      - name: Run ten-minute persistent simulated paper trading
+        if: steps.state.outputs.stopped == 'false'
         env:
           GITHUB_ACTIONS: 'true'
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
-        run: python -u paper_runner.py --duration 600 --paper --persist-to-github
+        run: python -u paper_runner.py --duration 600 --interval 2 --paper --persist-to-github
