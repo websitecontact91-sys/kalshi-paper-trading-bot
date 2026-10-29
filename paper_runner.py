@@ -309,10 +309,12 @@ def loop(args):
             candidates = []
             price_cache = {}
             unsupported = {}
+            scan_counts = {'final_minute': 0, 'mapped': 0, 'reference_ok': 0, 'evaluated': 0, 'qualifying': 0}
             for m in markets:
                 close = parse_time(m.get('close_time'))
                 if close is None or not 0 < close - time.time() <= 60:
                     continue
+                scan_counts['final_minute'] += 1
                 if any(prior_round_matches(t, m['close_time']) for t in state['history']):
                     continue
                 if state.get('trade') and str(state['trade'].get('round_id')) == round_id(m['close_time']):
@@ -321,14 +323,21 @@ def loop(args):
                 if series not in CF_INDEX_IDS and series not in PYTH_INDEX_IDS:
                     unsupported[series] = classification(series)
                     continue
+                scan_counts['mapped'] += 1
                 try:
                     if series not in price_cache:
                         price_cache[series] = (cf.price(series) if series in CF_INDEX_IDS else pyth.price(series))
                     px, ts = price_cache[series]
                     LOG.debug('REFERENCE_OK series=%s value=%s age=%.2fs', series, px, time.time()-ts)
+                    scan_counts['reference_ok'] += 1
                     fresh = client.market(m['ticker'])
                     book = client.orderbook(m['ticker'])
-                    for candidate in evaluate_market(fresh, px, time.time(), book, state['balance']):
+                    scan_counts['evaluated'] += 1
+                    options = evaluate_market(fresh, px, time.time(), book, state['balance'])
+                    scan_counts['qualifying'] += len(options)
+                    if not options:
+                        LOG.info('ENTRY_FILTERED series=%s ticker=%s status=%s strike_type=%s strike=%s yes_ask=%s no_ask=%s seconds_left=%.1f', series, m.get('ticker'), fresh.get('status'), fresh.get('strike_type'), fresh.get('floor_strike'), fresh.get('yes_ask_dollars'), fresh.get('no_ask_dollars'), (parse_time(fresh.get('close_time')) or 0)-time.time())
+                    for candidate in options:
                         candidate['index_time'] = ts
                         candidates.append(candidate)
                 except Exception as exc:
@@ -351,8 +360,8 @@ def loop(args):
                 else:
                     LOG.info('READ ONLY: simulated entry disabled')
             else:
-                LOG.info('SCAN discovered_markets=%d candidates=0 mode=%s',
-                         len(markets), state['mode'])
+                LOG.info('SCAN discovered_markets=%d candidates=0 mode=%s stages=%s',
+                         len(markets), state['mode'], scan_counts)
         time.sleep(max(0, args.interval - (time.monotonic() - tick)))
 
 
