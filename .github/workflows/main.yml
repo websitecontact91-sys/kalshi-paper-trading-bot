@@ -40,6 +40,9 @@ jobs:
       - name: Test paper trading decisions
         run: python -m pytest -q test_paper_decisions.py
 
+      - name: Audit live crypto market rules
+        run: python -u audit_market_rules.py
+
       - name: Diagnose all 15-minute market price feeds
         env:
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
