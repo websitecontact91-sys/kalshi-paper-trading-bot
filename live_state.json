@@ -1,10 +1,11 @@
 {
   "account_cash": "20.1037",
-  "account_cash_checked_at": "2026-10-29T22:00:25.590559+00:00",
+  "account_cash_checked_at": "2026-10-29T22:14:01.288752+00:00",
   "account_scope": "production:0:31c8bad33d4eb70d",
   "attempted_rounds": [
     "1992567",
-    "1992568"
+    "1992568",
+    "1992569"
   ],
   "attempts": [],
   "funds_policy": "continue_until_insufficient_funds.v1",
@@ -129,8 +130,36 @@
       "worst_case_debit": "1.00"
     }
   ],
-  "mode": "SCANNING",
-  "pending": null,
+  "mode": "RECONCILING",
+  "pending": {
+    "ask": "0.8900",
+    "balance_precision": "0.01",
+    "budget": "1.00",
+    "client_order_id": "c41aabc4-f60f-5a77-ba39-9d574e287f32",
+    "close_time": "2026-10-29T22:15:00Z",
+    "current": "0.70281000",
+    "distance_pct": "0.005691114747101088425695383083",
+    "execution": null,
+    "fee_multiplier": "1",
+    "observation_time": 1793312040.0,
+    "order_id": null,
+    "prepared_at": "2026-10-29T22:14:01.425474+00:00",
+    "probability_field": "kalshi_orderbook:1-best_YES_bid",
+    "quantity": "1.00",
+    "quoted_debit": "0.90",
+    "quoted_fees": "0.010000",
+    "quoted_payout": "1.00",
+    "quoted_principal": "0.890000",
+    "risk_flags": [],
+    "round_key": "1992569",
+    "series_ticker": "KXAUDUSD15M",
+    "side": "NO",
+    "source_sha": "1face99419d83668c05cc3f20104695010cd10f1",
+    "stage": "INTENT",
+    "target": "0.70285",
+    "ticker": "KXAUDUSD15M-26OCT291815-30",
+    "worst_case_debit": "1.00"
+  },
   "realized_pnl": "0.253800",
   "schema": "kalshi-live.v1",
   "session_id": "2c127708-6f99-4d8c-8197-4de798ce4966",
