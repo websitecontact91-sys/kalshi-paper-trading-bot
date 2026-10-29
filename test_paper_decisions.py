@@ -18,7 +18,7 @@ def market(yes_ask=0.85, no_ask=0.15, target=100):
         'series_ticker': 'KXBTC15M',
         'status': 'open',
         'strike_type': 'greater_or_equal',
-        'floor_strike': target,
+        'floor_strike': target,\n        'verified_display_payout_multiplier': 1.14,
         'close_time': '2030-01-01T00:15:00Z',
         'yes_ask_dollars': str(yes_ask),
         'no_ask_dollars': str(no_ask),
@@ -250,7 +250,7 @@ def test_exact_five_dollar_fractional_paper_notional():
     trade = trades[0]
     assert trade['cost'] == 5.0
     assert trade['fee_reserve'] == 0.0
-    assert abs(trade['count'] - 5.0 / 0.86) < 1e-10
+    assert abs(trade['count'] - 5.0 * 1.14) < 1e-10
     assert trade['count'] != int(trade['count'])  # Hypothetical fractional exposure.
 
 
@@ -267,7 +267,7 @@ def test_exact_five_dollar_paper_win_and_loss():
     win['trade'] = trade.copy()
     win['mode'] = 'WAITING_FOR_SETTLEMENT'
     assert settle(win, Outcome('yes'))
-    assert win['balance'] == round(995.0 + 5.0 / 0.86, 8)
+    assert win['balance'] == round(995.0 + 5.0 * 1.14, 8)
     assert win['mode'] == 'SCANNING'
     loss = default_state()
     loss['balance'] -= 5.0
@@ -276,3 +276,17 @@ def test_exact_five_dollar_paper_win_and_loss():
     assert settle(loss, Outcome('no'))
     assert loss['balance'] == 995.0
     assert loss['mode'] == 'STOPPED'
+
+
+def test_missing_verified_kalshi_payout_fails_closed():
+    m = market()
+    del m['verified_display_payout_multiplier']
+    with patch('paper_runner.best_bid_depth', return_value=20):
+        assert evaluate_market(m, 105, 1893456845.0, orderbook(), 1000) == []
+
+
+def test_out_of_range_display_payout_fails_closed():
+    m = market()
+    m['verified_display_payout_multiplier'] = 1.21
+    with patch('paper_runner.best_bid_depth', return_value=20):
+        assert evaluate_market(m, 105, 1893456845.0, orderbook(), 1000) == []
