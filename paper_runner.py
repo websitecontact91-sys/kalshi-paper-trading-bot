@@ -206,6 +206,38 @@ def choose(candidates):
                   -c['gross_payout'], c['ticker'], c['side']))[0]
 
 
+def fee_inclusive_quote(ask, fee_multiplier):
+    """Estimate $5 dollar-ticket payout from published Kalshi taker fee formula.
+
+    Fractional dollar exposure is PAPER ONLY. Round fees to cents per ticket.
+    A Kalshi on-screen quote may differ due to rounding, spread or fee rules.
+    """
+    if not (0 < ask < 1) or not math.isfinite(fee_multiplier) or fee_multiplier < 0:
+        raise ValueError('Invalid quote inputs')
+    # Solve the whole-ticket budget constraint with fee rounded UP to cents.
+    # Round down exposure to cents of contract payout, never spend > $5.
+    for payout_cents in range(int(TRADE_NOTIONAL / ask * 100), 0, -1):
+        payout = payout_cents / 100
+        fee = math.ceil((0.07 * fee_multiplier * payout * ask * (1 - ask)) * 100 - 1e-10) / 100
+        if payout * ask + fee <= TRADE_NOTIONAL + 1e-9:
+            return payout, fee
+    raise ValueError('No affordable paper payout')
+
+
+def series_fee_multiplier(client, series):
+    """Fail closed if Kalshi does not return fee parameters for this series."""
+    from urllib.parse import quote
+    payload = client.get('/series/' + quote(series, safe=''))
+    data = payload.get('series', {})
+    raw = data.get('fee_multiplier')
+    if raw is None:
+        raise ValueError('Missing live Kalshi fee_multiplier for ' + series)
+    multiplier = float(raw)
+    if not math.isfinite(multiplier) or multiplier < 0:
+        raise ValueError('Invalid live Kalshi fee multiplier for ' + series)
+    return multiplier
+
+
 def evaluate_market(m, px, current_time, book, balance):
     try:
         target = float(m['floor_strike'])
@@ -221,15 +253,12 @@ def evaluate_market(m, px, current_time, book, balance):
             ask = implied_ask(m, side)
             if ask is None or not 0.80 <= ask <= 0.90:
                 continue
-            # Kalshi's user-facing payout multiplier is not supplied by the
-            # verified public market/orderbook response. Never substitute
-            # 1/ask or an assumed fee formula for that displayed quote.
-            # Only use a separately verified, explicitly supplied multiplier.
-            raw_multiplier = m.get('verified_display_payout_multiplier')
-            if raw_multiplier is None:
+            fee_multiplier = m.get('_kalshi_series_fee_multiplier')
+            if fee_multiplier is None:
                 continue
-            gross = float(raw_multiplier)
-            if not math.isfinite(gross) or not 1.10 <= gross <= 1.20:
+            payout, fee = fee_inclusive_quote(ask, float(fee_multiplier))
+            gross = payout / TRADE_NOTIONAL
+            if not 1.10 <= gross <= 1.20:
                 continue
             depth = best_bid_depth(book, side, ask)
             if depth < 1:
@@ -239,18 +268,17 @@ def evaluate_market(m, px, current_time, book, balance):
             # No unverified fees are deducted.
             if balance + 1e-8 < TRADE_NOTIONAL:
                 continue
-            count = TRADE_NOTIONAL * gross
+            count = payout
             cost = TRADE_NOTIONAL
-            fee = 0.0
             signed = px - target if side == 'YES' else target - px
             if signed <= 0:
                 continue  # A negative distance means this side is currently losing.
             distance = 100 * signed / target
             options.append({'ticker': m['ticker'], 'side': side, 'ask': ask,
-                            'payout_source': 'verified_display_payout_multiplier',
+                            'payout_source': 'kalshi_published_fee_estimate',
                             'gross_payout': gross, 'distance_pct': distance,
                             'target': target, 'underlying': px, 'count': count,
-                            'cost': cost, 'fee_reserve': fee,
+                            'cost': cost, 'fee_reserve': fee,\n                            'fee_multiplier': float(fee_multiplier),
                             'close_time': m['close_time'], 'round_id': round_id(m['close_time'])})
         return options
     except (KeyError, ValueError, TypeError, ZeroDivisionError, OverflowError):
@@ -270,9 +298,9 @@ def settle(state, client):
                  trade['ticker'], market.get('status'), result)
         return False
     won = result == trade['side'].lower()
-    if won and trade.get('payout_source') and trade['payout_source'] != 'verified_display_payout_multiplier':
+    if won and trade.get('payout_source') and trade['payout_source'] != 'kalshi_published_fee_estimate':
         raise ValueError('Unverified paper payout source')
-    payout = round(trade['cost'] * trade['gross_payout'], 8) if won and trade.get('payout_source') == 'verified_display_payout_multiplier' else (round(trade['count'], 8) if won and 'payout_source' not in trade else 0.0)
+    payout = round(trade['cost'] * trade['gross_payout'], 8) if won and trade.get('payout_source') == 'kalshi_published_fee_estimate' else (round(trade['count'], 8) if won and 'payout_source' not in trade else 0.0)
     trade.update(result=result, won=won,
                  pnl=round(payout - trade['cost'], 8), settled_at=time.time())
     state['balance'] = round(state['balance'] + payout, 8)
@@ -298,9 +326,9 @@ def loop(args):
     pyth = KalshiPythPrices()
     started = time.monotonic()
     cached_markets = []
-    next_discovery = 0.0
+    next_discovery = 0.0\n    fee_cache = {}
     LOG.warning('REFERENCE COVERAGE mapped_cf=%d mapped_pyth=%d excluded_unmapped=5', len(CF_INDEX_IDS), len(PYTH_INDEX_IDS))
-    LOG.warning('NO REAL ORDERS. Mode=%s; fixed $%.2f paper notional; fractional simulated exposure; fees excluded',
+    LOG.warning('NO REAL ORDERS. Mode=%s; fixed $%.2f paper notional; fractional simulated exposure; published taker fee estimate included',
                 'PAPER' if args.paper else 'READ ONLY', TRADE_NOTIONAL)
     while time.monotonic() - started < args.duration:
         tick = time.monotonic()
@@ -347,7 +375,7 @@ def loop(args):
                     fresh = client.market(m['ticker'])
                     book = client.orderbook(m['ticker'])
                     scan_counts['evaluated'] += 1
-                    options = evaluate_market(fresh, px, time.time(), book, state['balance'])
+                    if series not in fee_cache:\n                        fee_cache[series] = series_fee_multiplier(client, series)\n                    fresh['_kalshi_series_fee_multiplier'] = fee_cache[series]\n                    options = evaluate_market(fresh, px, time.time(), book, state['balance'])
                     scan_counts['qualifying'] += len(options)
                     if not options:
                         LOG.info('ENTRY_FILTERED series=%s ticker=%s status=%s strike_type=%s strike=%s yes_ask=%s no_ask=%s seconds_left=%.1f', series, m.get('ticker'), fresh.get('status'), fresh.get('strike_type'), fresh.get('floor_strike'), fresh.get('yes_ask_dollars'), fresh.get('no_ask_dollars'), (parse_time(fresh.get('close_time')) or 0)-time.time())
