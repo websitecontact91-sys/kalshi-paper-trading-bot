@@ -4,7 +4,7 @@ name: Kalshi 15-minute paper trading
 on:
   workflow_dispatch:
   schedule:
-    - cron: '* * * * *'
+    - cron: '*/5 * * * *'
 
 permissions:
   contents: write
@@ -16,7 +16,7 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-24.04
-    timeout-minutes: 4
+    timeout-minutes: 8
     steps:
       - name: Download bot code and saved paper state
         uses: actions/checkout@v4
@@ -39,4 +39,4 @@ jobs:
           GITHUB_ACTIONS: 'true'
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
-        run: python -u paper_runner.py --duration 90 --paper --persist-to-github
+        run: python -u paper_runner.py --duration 300 --paper --persist-to-github
