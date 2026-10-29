@@ -278,7 +278,8 @@ def evaluate_market(m, px, current_time, book, balance):
                             'payout_source': 'kalshi_published_fee_estimate',
                             'gross_payout': gross, 'distance_pct': distance,
                             'target': target, 'underlying': px, 'count': count,
-                            'cost': cost, 'fee_reserve': fee,\n                            'fee_multiplier': float(fee_multiplier),
+                            'cost': cost, 'fee_reserve': fee,
+                            'fee_multiplier': float(fee_multiplier),
                             'close_time': m['close_time'], 'round_id': round_id(m['close_time'])})
         return options
     except (KeyError, ValueError, TypeError, ZeroDivisionError, OverflowError):
@@ -375,7 +376,10 @@ def loop(args):
                     fresh = client.market(m['ticker'])
                     book = client.orderbook(m['ticker'])
                     scan_counts['evaluated'] += 1
-                    if series not in fee_cache:\n                        fee_cache[series] = series_fee_multiplier(client, series)\n                    fresh['_kalshi_series_fee_multiplier'] = fee_cache[series]\n                    options = evaluate_market(fresh, px, time.time(), book, state['balance'])
+                    if series not in fee_cache:
+                        fee_cache[series] = series_fee_multiplier(client, series)
+                    fresh['_kalshi_series_fee_multiplier'] = fee_cache[series]
+                    options = evaluate_market(fresh, px, time.time(), book, state['balance'])
                     scan_counts['qualifying'] += len(options)
                     if not options:
                         LOG.info('ENTRY_FILTERED series=%s ticker=%s status=%s strike_type=%s strike=%s yes_ask=%s no_ask=%s seconds_left=%.1f', series, m.get('ticker'), fresh.get('status'), fresh.get('strike_type'), fresh.get('floor_strike'), fresh.get('yes_ask_dollars'), fresh.get('no_ask_dollars'), (parse_time(fresh.get('close_time')) or 0)-time.time())
