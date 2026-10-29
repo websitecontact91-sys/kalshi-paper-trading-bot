@@ -29,6 +29,13 @@ CF_INDEX_IDS = {
     'KXETH15M': 'ETHUSD_RTI',
     'KXSOL15M': 'SOLUSD_RTI',
     'KXHYPE15M': 'HYPEUSD_RTI',
+    'KXADA15M': 'ADAUSD_RTI',
+    'KXBCH15M': 'BCHUSD_RTI',
+    'KXBNB15M': 'BNBUSD_RTI',
+    'KXDOGE15M': 'DOGEUSD_RTI',
+    'KXNEAR15M': 'NEARUSD_RTI',
+    'KXXRP15M': 'XRPUSD_RTI',
+    'KXZEC15M': 'ZECUSD_RTI',
 }
 FEE_RESERVE_PER_SHARE = 0.10  # Paper estimate, not Kalshi's verified fee.
 
