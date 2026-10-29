@@ -34,7 +34,7 @@ PYTH_UNVERIFIED = {
 
 def classification(series):
     if series in CF:
-        return "CF_ENDPOINT_TESTED"
+        return "KALSHI_CF_INDEX_MAPPED"
     if series in PYTH_INDEX_IDS:
         return "KALSHI_PYTH_STREAM_MAPPED_UNVERIFIED_CONTRACT"
     return "NO_VERIFIED_SETTLEMENT_FEED"
