@@ -55,8 +55,12 @@ def main():
         "series": [],
     }
     for name in series:
+        details = client.get("/series/" + name).get("series", {})
+        sources = details.get("settlement_sources") or []
         item = {
             "series": name,
+            "official_settlement_sources": sources,
+            "contract_terms_url": details.get("contract_terms_url"),
             "open_markets": len(by_series[name]),
             "classification": classification(name),
             "reference": CF.get(name) or PYTH_UNVERIFIED.get(name),
