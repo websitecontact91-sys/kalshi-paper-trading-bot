@@ -45,6 +45,27 @@ def main():
             msg=data.get("msg",{})
             received.append({"type":typ,"index_id":msg.get("index_id"),"underlying_ticker":msg.get("underlying_ticker"),"timestamp":msg.get("source_ts_ms")})
     ws.close()
+    # Verify actual Pyth observations rather than only available ticker names.
+    from kalshi_pyth import PYTH_INDEX_IDS
+    stream = websocket.create_connection("wss://external-api-ws.kalshi.com/trade-api/ws/v2",header=auth(),timeout=5)
+    stream.send(json.dumps({"id":200,"cmd":"subscribe","params":{"channels":["pyth_value"],"underlying_tickers":sorted(set(PYTH_INDEX_IDS.values()))}}))
+    seen = {}
+    errors = []
+    deadline2 = time.monotonic()+45
+    while time.monotonic()<deadline2 and len(seen)<len(set(PYTH_INDEX_IDS.values())):
+        try:
+            evt=json.loads(stream.recv())
+        except websocket.WebSocketTimeoutException:
+            continue
+        if evt.get("type")=="error":
+            errors.append(evt.get("msg"))
+        if evt.get("type")=="pyth_value":
+            msg=evt.get("msg") or {}
+            ticker=msg.get("underlying_ticker")
+            if ticker in PYTH_INDEX_IDS.values():
+                seen[ticker]={"value_usd":msg.get("value_usd"),"source_ts_ms":msg.get("source_ts_ms")}
+    stream.close()
+    print("KALSHI_PYTH_LIVE_AUDIT "+json.dumps({"observations":seen,"missing":sorted(set(PYTH_INDEX_IDS.values())-set(seen)),"errors":errors}),flush=True)
     # Probe each mapped CF index using the same authenticated REST client as the bot.
     from paper_runner import CF_INDEX_IDS, KalshiCFPrices
     cf = KalshiCFPrices()
