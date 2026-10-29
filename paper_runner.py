@@ -327,7 +327,8 @@ def loop(args):
     pyth = KalshiPythPrices()
     started = time.monotonic()
     cached_markets = []
-    next_discovery = 0.0\n    fee_cache = {}
+    next_discovery = 0.0
+    fee_cache = {}
     LOG.warning('REFERENCE COVERAGE mapped_cf=%d mapped_pyth=%d excluded_unmapped=5', len(CF_INDEX_IDS), len(PYTH_INDEX_IDS))
     LOG.warning('NO REAL ORDERS. Mode=%s; fixed $%.2f paper notional; fractional simulated exposure; published taker fee estimate included',
                 'PAPER' if args.paper else 'READ ONLY', TRADE_NOTIONAL)
