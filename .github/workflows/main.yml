@@ -35,10 +35,10 @@ jobs:
           python -m pip install cryptography
 
       - name: Check Python syntax
-        run: python -m py_compile paper_runner.py discover.py bot.py feed_probe.py market_coverage.py reference_windows.py
+        run: python -m py_compile paper_runner.py discover.py bot.py feed_probe.py market_coverage.py reference_windows.py pyth_prices.py
 
       - name: Test paper trading decisions
-        run: python -m pytest -q test_paper_decisions.py test_market_coverage.py test_reference_windows.py
+        run: python -m pytest -q test_paper_decisions.py test_market_coverage.py test_reference_windows.py test_pyth_prices.py
 
       - name: Audit live crypto market rules
         run: python -u audit_market_rules.py
@@ -46,6 +46,8 @@ jobs:
       - name: Diagnose all 15-minute market price feeds
         env:
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+          PYTH_API_KEY: ${{ secrets.PYTH_API_KEY }}
+          PYTH_VERIFIED_FEED_IDS: ${{ vars.PYTH_VERIFIED_FEED_IDS }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
         run: python -u feed_probe.py
 
