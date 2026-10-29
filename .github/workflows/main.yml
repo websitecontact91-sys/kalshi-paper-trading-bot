@@ -1,5 +1,5 @@
 
-name: Kalshi Bot - Bitcoin Paper Trading
+name: Kalshi 15-minute paper trading
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: kalshi-bitcoin-paper-state
+  group: kalshi-paper-state
   cancel-in-progress: false
 
 jobs:
@@ -35,10 +35,10 @@ jobs:
           python -m pip install cryptography
 
       - name: Check Python syntax
-        run: python -m py_compile paper_runner.py discover.py bot.py feed_probe.py
+        run: python -m py_compile paper_runner.py discover.py bot.py feed_probe.py market_coverage.py reference_windows.py
 
       - name: Test paper trading decisions
-        run: python -m pytest -q test_paper_decisions.py
+        run: python -m pytest -q test_paper_decisions.py test_market_coverage.py test_reference_windows.py
 
       - name: Audit live crypto market rules
         run: python -u audit_market_rules.py
@@ -49,9 +49,9 @@ jobs:
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
         run: python -u feed_probe.py
 
-      - name: Run Bitcoin paper trading
+      - name: Run persistent simulated paper trading
         env:
           GITHUB_ACTIONS: 'true'
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
-        run: python -u paper_runner.py --duration 240
+        run: python -u paper_runner.py --duration 240 --paper --persist-to-github
