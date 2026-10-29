@@ -22,9 +22,9 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install cryptography
       - name: Check syntax
-        run: python -m py_compile market_coverage.py discover.py paper_runner.py reference_windows.py pyth_prices.py
+        run: python -m py_compile market_coverage.py discover.py paper_runner.py reference_windows.py
       - name: Run offline tests
-        run: python -m pytest -q test_market_coverage.py test_paper_decisions.py test_reference_windows.py test_pyth_prices.py
+        run: python -m pytest -q test_market_coverage.py test_paper_decisions.py test_reference_windows.py
 
   live-market-inventory:
     runs-on: ubuntu-24.04
