@@ -37,6 +37,8 @@ Readiness additionally requires live same-source deployment evidence, several ho
 
 The documented model uses the current quadratic taker formula, effective series/event terms, market fee waivers, positive 0.01-contract increments, six-decimal model-fee rounding and explicitly configured account balance precision. It sizes against actual depth at one observed price level and never assumes cumulative liquidity at a different price. Modeled quotes identify their assumptions and do not claim to be captured retail UI quotes.
 
+Kalshi's live event responses omit unused fee-override fields. The adapter follows the official optional/nullable/omit-empty schema and inherits observed series fees only after binding the fetched event to its market and series. A captured public BTC/SOL/WTI metadata-and-book fixture verifies those actual response shapes. It is explicitly separate from the still-missing retail SOL payout quote evidence.
+
 Primary documentation:
 
 - [Kalshi fee schedule](https://kalshi.com/docs/kalshi-fee-schedule.pdf)

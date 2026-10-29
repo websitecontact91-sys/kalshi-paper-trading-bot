@@ -1,0 +1,264 @@
+{
+  "captured_at": "2026-10-29T18:37:32.623006+00:00",
+  "cases": {
+    "KXBTC15M": {
+      "book": {
+        "orderbook_fp": {
+          "no_dollars": [
+            [
+              "0.7500",
+              "8442.02"
+            ],
+            [
+              "0.7600",
+              "7286.11"
+            ],
+            [
+              "0.7700",
+              "11896.38"
+            ]
+          ],
+          "yes_dollars": [
+            [
+              "0.2000",
+              "6748.00"
+            ],
+            [
+              "0.2100",
+              "7562.48"
+            ],
+            [
+              "0.2200",
+              "6580.78"
+            ]
+          ]
+        },
+        "ticker": "KXBTC15M-26OCT291445-45"
+      },
+      "event": {
+        "category": "Crypto",
+        "collateral_return_type": "",
+        "event_ticker": "KXBTC15M-26OCT291445",
+        "exchange_index": 2,
+        "last_updated_ts": "0001-01-01T00:00:00Z",
+        "mutually_exclusive": false,
+        "product_metadata": {
+          "cadence": "fifteen_min"
+        },
+        "series_ticker": "KXBTC15M",
+        "settlement_sources": [
+          {
+            "name": "CF Benchmarks",
+            "url": "https://www.cfbenchmarks.com/"
+          }
+        ],
+        "strike_date": "2026-10-29T18:45:00Z",
+        "strike_period": "",
+        "sub_title": "Oct 29 - 2:30PM EDT to 2:45PM EDT",
+        "title": "BTC 15 min \u00b7 $80,686.34 target"
+      },
+      "expected_executable_levels": {
+        "NO": [
+          "0.7800",
+          "6580.78"
+        ],
+        "YES": [
+          "0.2300",
+          "11896.38"
+        ]
+      },
+      "market": {
+        "event_ticker": "KXBTC15M-26OCT291445",
+        "market_type": "binary",
+        "no_ask_dollars": "0.8800",
+        "notional_value_dollars": "1.0000",
+        "settlement_bounds_type": "default",
+        "ticker": "KXBTC15M-26OCT291445-45",
+        "yes_ask_dollars": "0.1300"
+      },
+      "series": {
+        "fee_multiplier": 1,
+        "fee_type": "quadratic",
+        "ticker": "KXBTC15M"
+      }
+    },
+    "KXSOL15M": {
+      "book": {
+        "orderbook_fp": {
+          "no_dollars": [
+            [
+              "0.9020",
+              "3.00"
+            ],
+            [
+              "0.9030",
+              "103.00"
+            ],
+            [
+              "0.9040",
+              "101.00"
+            ]
+          ],
+          "yes_dollars": [
+            [
+              "0.0920",
+              "22.00"
+            ],
+            [
+              "0.0930",
+              "9.00"
+            ],
+            [
+              "0.0950",
+              "1.00"
+            ]
+          ]
+        },
+        "ticker": "KXSOL15M-26OCT291445-45"
+      },
+      "event": {
+        "category": "Crypto",
+        "collateral_return_type": "",
+        "event_ticker": "KXSOL15M-26OCT291445",
+        "exchange_index": 2,
+        "last_updated_ts": "0001-01-01T00:00:00Z",
+        "mutually_exclusive": false,
+        "product_metadata": {
+          "cadence": "fifteen_min"
+        },
+        "series_ticker": "KXSOL15M",
+        "settlement_sources": [
+          {
+            "name": "CF Benchmarks",
+            "url": "https://www.cfbenchmarks.com/"
+          }
+        ],
+        "strike_date": "2026-10-29T18:45:00Z",
+        "strike_period": "",
+        "sub_title": "Oct 29 - 2:30PM EDT to 2:45PM EDT",
+        "title": "SOL 15 min \u00b7 $100.7223 target"
+      },
+      "expected_executable_levels": {
+        "NO": [
+          "0.9050",
+          "1.00"
+        ],
+        "YES": [
+          "0.0960",
+          "101.00"
+        ]
+      },
+      "market": {
+        "event_ticker": "KXSOL15M-26OCT291445",
+        "market_type": "binary",
+        "no_ask_dollars": "0.9060",
+        "notional_value_dollars": "1.0000",
+        "settlement_bounds_type": "default",
+        "ticker": "KXSOL15M-26OCT291445-45",
+        "yes_ask_dollars": "0.0950"
+      },
+      "series": {
+        "fee_multiplier": 1,
+        "fee_type": "quadratic",
+        "ticker": "KXSOL15M"
+      }
+    },
+    "KXWTI15M": {
+      "book": {
+        "orderbook_fp": {
+          "no_dollars": [
+            [
+              "0.2100",
+              "3348.92"
+            ],
+            [
+              "0.2200",
+              "22.00"
+            ],
+            [
+              "0.2300",
+              "135.76"
+            ]
+          ],
+          "yes_dollars": [
+            [
+              "0.7400",
+              "306.25"
+            ],
+            [
+              "0.7500",
+              "803.00"
+            ],
+            [
+              "0.7600",
+              "150.00"
+            ]
+          ]
+        },
+        "ticker": "KXWTI15M-26OCT291445-45"
+      },
+      "event": {
+        "category": "Commodities",
+        "collateral_return_type": "",
+        "event_ticker": "KXWTI15M-26OCT291445",
+        "exchange_index": 2,
+        "last_updated_ts": "0001-01-01T00:00:00Z",
+        "mutually_exclusive": false,
+        "product_metadata": {
+          "cadence": "fifteen_min"
+        },
+        "series_ticker": "KXWTI15M",
+        "settlement_sources": [
+          {
+            "name": "Pyth - WTI",
+            "url": "https://app.pyth.com/explore/Commodities.Index.PYTHOIL%2FUSD?returnUrl=%2Fexplore%3Fsearch%3DPythOil%26state%3Dstable"
+          }
+        ],
+        "strike_date": "2026-10-29T18:45:00Z",
+        "strike_period": "",
+        "sub_title": "Oct 29 - 2:30PM EDT to 2:45PM EDT",
+        "title": "WTI Oil 15 min \u00b7 $102.01 target"
+      },
+      "expected_executable_levels": {
+        "NO": [
+          "0.2400",
+          "150.00"
+        ],
+        "YES": [
+          "0.7700",
+          "135.76"
+        ]
+      },
+      "market": {
+        "event_ticker": "KXWTI15M-26OCT291445",
+        "market_type": "binary",
+        "no_ask_dollars": "0.2800",
+        "notional_value_dollars": "1.0000",
+        "settlement_bounds_type": "default",
+        "ticker": "KXWTI15M-26OCT291445-45",
+        "yes_ask_dollars": "0.7400"
+      },
+      "series": {
+        "fee_multiplier": 1,
+        "fee_type": "quadratic",
+        "ticker": "KXWTI15M"
+      }
+    }
+  },
+  "orderbook_selection": "Highest three bid levels per side retained from the captured response; source prices and quantities preserved.",
+  "purpose": "Real unauthenticated public market metadata and orderbook shape regression; not a retail quote, account precision attestation, or UI parity evidence.",
+  "schema": "kalshi-paper.public-market-schema.v1",
+  "schema_reference": "https://docs.kalshi.com/openapi.yaml",
+  "source_urls": [
+    "https://external-api.kalshi.com/trade-api/v2/markets?series_ticker=KXSOL15M&status=open&limit=1000",
+    "https://external-api.kalshi.com/trade-api/v2/markets?series_ticker=KXWTI15M&status=open&limit=1000",
+    "https://external-api.kalshi.com/trade-api/v2/series/KXWTI15M",
+    "https://external-api.kalshi.com/trade-api/v2/series/KXBTC15M",
+    "https://external-api.kalshi.com/trade-api/v2/series/KXSOL15M",
+    "https://external-api.kalshi.com/trade-api/v2/markets?series_ticker=KXBTC15M&status=open&limit=1000",
+    "https://external-api.kalshi.com/trade-api/v2/markets/orderbooks?tickers=KXWTI15M-26OCT291445-45&tickers=KXSOL15M-26OCT291445-45&tickers=KXBTC15M-26OCT291445-45",
+    "https://external-api.kalshi.com/trade-api/v2/events/KXWTI15M-26OCT291445",
+    "https://external-api.kalshi.com/trade-api/v2/events/KXBTC15M-26OCT291445",
+    "https://external-api.kalshi.com/trade-api/v2/events/KXSOL15M-26OCT291445"
+  ]
+}

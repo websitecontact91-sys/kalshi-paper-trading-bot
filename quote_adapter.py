@@ -152,15 +152,34 @@ def build_quote(raw, budget=Decimal("5.00")):
 
 
 def effective_fee_terms(series, event, market, *, now=None):
-    """Resolve observed series terms, event overrides, and a market fee waiver."""
+    """Resolve observed series terms, event overrides, and a market fee waiver.
+
+    Kalshi's EventData schema makes both overrides optional, nullable, and
+    x-omitempty; an absent override inherits the series terms. Accept that API
+    representation only when the fetched event's identity matches the market
+    and series. An empty/missing event response is not evidence of inheritance.
+    Source: https://docs.kalshi.com/openapi.yaml (EventData, EventFeeChange).
+    """
     if not isinstance(series, dict) or not isinstance(event, dict) or not isinstance(market, dict):
         raise QuoteUnavailable("series, event, and market metadata are required")
     if "fee_type" not in series or "fee_multiplier" not in series:
         raise QuoteUnavailable("series fee metadata is missing")
-    if "fee_type_override" not in event or "fee_multiplier_override" not in event:
-        raise QuoteUnavailable("event fee override metadata is missing")
-    fee_type = event["fee_type_override"] if event["fee_type_override"] is not None else series["fee_type"]
-    multiplier = event["fee_multiplier_override"] if event["fee_multiplier_override"] is not None else series["fee_multiplier"]
+    override_names = ("fee_type_override", "fee_multiplier_override")
+    if any(name not in event for name in override_names):
+        event_id, series_id = event.get("event_ticker"), event.get("series_ticker")
+        if (not isinstance(event_id, str) or not event_id or event_id != market.get("event_ticker")
+                or not isinstance(series_id, str) or not series_id or series_id != series.get("ticker")
+                or market.get("series_ticker", series_id) != series_id
+                or str(market.get("ticker", "")).split("-", 1)[0] != series_id):
+            raise QuoteUnavailable("event fee override metadata is missing or event identity is unverified")
+        # The schema describes these fields as a pair. A non-null override with
+        # its companion absent is incomplete metadata, not a no-override case.
+        if any(event.get(name) is not None for name in override_names):
+            raise QuoteUnavailable("event fee override pair is incomplete")
+    fee_type = event.get("fee_type_override")
+    multiplier = event.get("fee_multiplier_override")
+    fee_type = series["fee_type"] if fee_type is None else fee_type
+    multiplier = series["fee_multiplier"] if multiplier is None else multiplier
     multiplier = _number(multiplier, "fee multiplier")
     if fee_type != "quadratic":
         raise QuoteUnavailable(f"unsupported fee_type: {fee_type!r}")

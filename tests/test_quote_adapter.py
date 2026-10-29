@@ -2,12 +2,14 @@
 
 import hashlib
 import json
+import copy
 from decimal import Decimal as D
 from pathlib import Path
 
 import pytest
 
 from payout_quote import PayoutQuote
+from kalshi_client import ask_and_depth
 from quote_adapter import (NORMALIZED_SCHEMA, QuoteUnavailable, build_modeled_quote,
                            build_quote, documented_taker_cost, effective_fee_terms)
 
@@ -157,6 +159,76 @@ def test_missing_event_or_series_fee_metadata_is_not_defaulted():
     del event["fee_multiplier_override"]
     with pytest.raises(QuoteUnavailable, match="event"):
         build_modeled_quote("0.87", "100", series, event, market, balance_precision="0.01")
+
+
+def captured_public_case(series="KXSOL15M"):
+    path = Path(__file__).parent / "fixtures" / "live_public_schema_20261029.json"
+    return json.loads(path.read_text())["cases"][series]
+
+
+@pytest.mark.parametrize("series_id", ["KXBTC15M", "KXSOL15M", "KXWTI15M"])
+def test_real_public_event_metadata_omits_overrides_and_inherits_observed_series_fees(series_id):
+    case = captured_public_case(series_id)
+    series, event, market = case["series"], case["event"], case["market"]
+    assert "fee_type_override" not in event and "fee_multiplier_override" not in event
+    assert effective_fee_terms(series, event, market) == ("quadratic", D("1"), False)
+    explicit_null = dict(event, fee_type_override=None, fee_multiplier_override=None)
+    assert effective_fee_terms(series, explicit_null, market) == effective_fee_terms(series, event, market)
+    # These are actual public book levels, not captured retail payout quotes.
+    for side, (ask, expected_depth) in case["expected_executable_levels"].items():
+        price, depth = ask_and_depth(case["book"], side, ask)
+        assert price == D(ask) and depth == D(expected_depth)
+        for precision in ("0.01", "0.0001"):
+            q = build_modeled_quote(price, depth, series, event, market, balance_precision=precision)
+            assert D("0") < q.quote.debit <= D("5.00")
+            assert q.principal + q.fees == q.quote.debit
+            assert q.quantity <= depth and q.quantity % D("0.01") == 0
+            assert q.quote.payout == q.quantity
+            assert q.ui_parity_verified is False
+
+
+@pytest.mark.parametrize("change", [
+    lambda s, e, m: e.clear(),
+    lambda s, e, m: e.pop("event_ticker"),
+    lambda s, e, m: e.pop("series_ticker"),
+    lambda s, e, m: e.update(event_ticker="KXSOL15M-WRONG-EVENT"),
+    lambda s, e, m: e.update(series_ticker="KXBTC15M"),
+    lambda s, e, m: s.update(ticker="KXBTC15M"),
+    lambda s, e, m: m.update(ticker="KXBTC15M-WRONG-MARKET"),
+    lambda s, e, m: m.update(series_ticker="KXBTC15M"),
+    lambda s, e, m: m.pop("event_ticker"),
+])
+def test_omitted_optional_fees_require_a_matching_fetched_event(change):
+    case = captured_public_case()
+    series, event, market = case["series"], case["event"], case["market"]
+    change(series, event, market)
+    with pytest.raises(QuoteUnavailable, match="event"):
+        effective_fee_terms(series, event, market)
+
+
+@pytest.mark.parametrize("partial", [{"fee_type_override": "quadratic"},
+                                     {"fee_multiplier_override": "0"}])
+def test_incomplete_nonnull_event_override_is_not_silently_inherited(partial):
+    case = captured_public_case()
+    case["event"].update(partial)
+    with pytest.raises(QuoteUnavailable, match="incomplete"):
+        effective_fee_terms(case["series"], case["event"], case["market"])
+
+
+@pytest.mark.parametrize("field", ["fee_type_override", "fee_multiplier_override"])
+def test_one_explicit_null_and_one_omitted_override_both_inherit(field):
+    case = captured_public_case()
+    case["event"][field] = None
+    assert effective_fee_terms(case["series"], case["event"], case["market"]) == (
+        "quadratic", D("1"), False)
+
+
+def test_observed_event_override_still_wins_over_series_after_omission_fix():
+    case = captured_public_case()
+    event = copy.deepcopy(case["event"])
+    event.update(fee_type_override="quadratic", fee_multiplier_override="0")
+    assert effective_fee_terms(case["series"], event, case["market"]) == (
+        "quadratic", D("0"), False)
 
 
 def test_fee_waiver_expires_at_the_documented_time():
