@@ -246,7 +246,8 @@ def evaluate_market(m, px, current_time, book, balance):
             if signed <= 0:
                 continue  # A negative distance means this side is currently losing.
             distance = 100 * signed / target
-            options.append({'ticker': m['ticker'], 'side': side, 'ask': ask,\n                            'payout_source': 'verified_display_payout_multiplier',
+            options.append({'ticker': m['ticker'], 'side': side, 'ask': ask,
+                            'payout_source': 'verified_display_payout_multiplier',
                             'gross_payout': gross, 'distance_pct': distance,
                             'target': target, 'underlying': px, 'count': count,
                             'cost': cost, 'fee_reserve': fee,
