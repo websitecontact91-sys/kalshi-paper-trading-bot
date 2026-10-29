@@ -16,7 +16,7 @@ SEED_SERIES = (
 
 SERIES_15M = re.compile(r'15M(?:IN(?:UTE)?)?$', re.I)
 TITLE_15M = re.compile(r'\b15\s*(?:min|mins|minute|minutes)\b', re.I)
-EXCLUDED = {'KXCRYPTOLEAD15M'}
+EXCLUDED = {'KXCRYPTOLEAD15M', 'KXSPORT15M'}
 
 
 def parse_utc(value):
