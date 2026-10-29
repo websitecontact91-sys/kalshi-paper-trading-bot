@@ -192,3 +192,37 @@ def test_legacy_round_id_cannot_bypass_global_limit():
     assert prior_round_matches({'round_id': round_id(close)}, close)
     assert prior_round_matches({'close_time': close}, close)
     assert not prior_round_matches({'round_id': '2030-01-01T00:30:00Z'}, close)
+
+
+def test_complete_paper_lifecycle_win_then_loss(tmp_path):
+    from paper_runner import persist
+    state = default_state()
+    state['balance'] = 995.25
+    state['mode'] = 'WAITING_FOR_SETTLEMENT'
+    state['trade'] = {'ticker': 'ROUND1', 'side': 'YES', 'count': 5,
+                      'cost': 4.75, 'round_id': '1'}
+    path = tmp_path / 'state.json'
+    persist(state, path)
+    restored = load_state(path)
+
+    class Results:
+        def __init__(self, outcome):
+            self.outcome = outcome
+
+        def market(self, ticker):
+            return {'result': self.outcome}
+
+    assert not settle(restored, Results(''))
+    assert restored['mode'] == 'WAITING_FOR_SETTLEMENT'
+    assert settle(restored, Results('yes'))
+    assert restored['mode'] == 'SCANNING'
+    assert restored['balance'] == 1000.25
+
+    restored['balance'] -= 4.75
+    restored['mode'] = 'WAITING_FOR_SETTLEMENT'
+    restored['trade'] = {'ticker': 'ROUND2', 'side': 'YES', 'count': 5,
+                         'cost': 4.75, 'round_id': '2'}
+    assert settle(restored, Results('no'))
+    persist(restored, path)
+    assert load_state(path)['mode'] == 'STOPPED'
+    assert len(restored['history']) == 2
