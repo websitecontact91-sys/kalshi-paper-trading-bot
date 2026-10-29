@@ -221,8 +221,15 @@ def evaluate_market(m, px, current_time, book, balance):
             ask = implied_ask(m, side)
             if ask is None or not 0.80 <= ask <= 0.90:
                 continue
-            gross = 1.0 / ask
-            if not 1.10 <= gross <= 1.20:
+            # Kalshi's user-facing payout multiplier is not supplied by the
+            # verified public market/orderbook response. Never substitute
+            # 1/ask or an assumed fee formula for that displayed quote.
+            # Only use a separately verified, explicitly supplied multiplier.
+            raw_multiplier = m.get('verified_display_payout_multiplier')
+            if raw_multiplier is None:
+                continue
+            gross = float(raw_multiplier)
+            if not math.isfinite(gross) or not 1.10 <= gross <= 1.20:
                 continue
             depth = best_bid_depth(book, side, ask)
             if depth < 1:
@@ -232,14 +239,14 @@ def evaluate_market(m, px, current_time, book, balance):
             # No unverified fees are deducted.
             if balance + 1e-8 < TRADE_NOTIONAL:
                 continue
-            count = TRADE_NOTIONAL / ask
+            count = TRADE_NOTIONAL * gross
             cost = TRADE_NOTIONAL
             fee = 0.0
             signed = px - target if side == 'YES' else target - px
             if signed <= 0:
                 continue  # A negative distance means this side is currently losing.
             distance = 100 * signed / target
-            options.append({'ticker': m['ticker'], 'side': side, 'ask': ask,
+            options.append({'ticker': m['ticker'], 'side': side, 'ask': ask,\n                            'payout_source': 'verified_display_payout_multiplier',
                             'gross_payout': gross, 'distance_pct': distance,
                             'target': target, 'underlying': px, 'count': count,
                             'cost': cost, 'fee_reserve': fee,
@@ -261,8 +268,8 @@ def settle(state, client):
         LOG.info('WAITING FOR OFFICIAL RESULT %s status=%s result=%r',
                  trade['ticker'], market.get('status'), result)
         return False
-    won = result == trade['side'].lower()
-    payout = round(trade['count'], 8) if won else 0.0
+    won = result == trade['side'].lower()\n    if won and trade.get('payout_source') and trade['payout_source'] != 'verified_display_payout_multiplier':\n        raise ValueError('Unverified paper payout source')
+    payout = round(trade['cost'] * trade['gross_payout'], 8) if won and trade.get('payout_source') == 'verified_display_payout_multiplier' else (round(trade['count'], 8) if won and 'payout_source' not in trade else 0.0)
     trade.update(result=result, won=won,
                  pnl=round(payout - trade['cost'], 8), settled_at=time.time())
     state['balance'] = round(state['balance'] + payout, 8)
