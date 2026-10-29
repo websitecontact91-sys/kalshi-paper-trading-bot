@@ -1,7 +1,7 @@
 
 """Kalshi 15-minute multi-market paper simulator; NEVER places real orders.
-Only CF Benchmarks series with tested index endpoints are eligible for simulation.
-Other discovered series are logged as unsupported, not silently traded.
+All discovered series are scanned and classified. Only series with verified
+settlement-reference feeds can be evaluated; unsupported ones fail closed.
 """
 import argparse
 import base64
@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, padding
 from bot import Kalshi, implied_ask, best_bid_depth
 from discover import discover_open, discover_series
+from market_coverage import classification
 
 LOG = logging.getLogger('paper_runner')
 BASE = 'https://api.elections.kalshi.com/trade-api/v2'
@@ -90,19 +91,15 @@ def discover(client):
                             series_tickers=series, stats=stats)
     if stats.get('failed_series') or stats.get('truncated_series'):
         raise RuntimeError('Incomplete market discovery: ' + str(stats))
-    supported = []
-    unsupported = set()
+    groups = {}
     for m in markets:
         name = m.get('series_ticker') or m.get('ticker', '').split('-')[0]
-        if name in CF_INDEX_IDS:
-            supported.append(m)
-        else:
-            unsupported.add(name)
-    LOG.info('DISCOVERY series=%d markets=%d supported=%d unmapped_series=%d',
-             len(series), len(markets), len(supported), len(unsupported))
-    if unsupported:
-        LOG.info('UNMAPPED SERIES (not traded): %s', ', '.join(sorted(unsupported)))
-    return supported
+        groups.setdefault(classification(name), set()).add(name)
+    LOG.info('DISCOVERY series=%d markets=%d', len(series), len(markets))
+    for kind, names in sorted(groups.items()):
+        LOG.info('COVERAGE %s series=%d names=%s',
+                 kind, len(names), ', '.join(sorted(names)))
+    return markets
 
 
 class KalshiCFPrices:
@@ -191,7 +188,10 @@ def evaluate_market(m, px, current_time, book, balance):
             cost = round(count * ask + fee, 8)
             if cost > budget + 1e-8:
                 continue
-            distance = 100 * (px - target if side == 'YES' else target - px) / target
+            signed = px - target if side == 'YES' else target - px
+            if signed <= 0:
+                continue  # A negative distance means this side is currently losing.
+            distance = 100 * signed / target
             options.append({'ticker': m['ticker'], 'side': side, 'ask': ask,
                             'gross_payout': gross, 'distance_pct': distance,
                             'target': target, 'underlying': px, 'count': count,
@@ -251,15 +251,22 @@ def loop(args):
         else:
             markets = discover(client)
             candidates = []
+            price_cache = {}
+            unsupported = {}
             for m in markets:
                 close = parse_time(m.get('close_time'))
                 if close is None or not 0 < close - time.time() <= 60:
                     continue
                 if any(t.get('round_id') == m['close_time'] for t in state['history']):
                     continue
+                series = m.get('series_ticker') or m['ticker'].split('-')[0]
+                if series not in CF_INDEX_IDS:
+                    unsupported[series] = classification(series)
+                    continue
                 try:
-                    series = m.get('series_ticker') or m['ticker'].split('-')[0]
-                    px, ts = cf.price(series)
+                    if series not in price_cache:
+                        price_cache[series] = cf.price(series)
+                    px, ts = price_cache[series]
                     fresh = client.market(m['ticker'])
                     book = client.orderbook(m['ticker'])
                     for candidate in evaluate_market(fresh, px, time.time(), book, state['balance']):
@@ -267,6 +274,9 @@ def loop(args):
                         candidates.append(candidate)
                 except Exception as exc:
                     LOG.warning('CANNOT EVALUATE %s: %s', m.get('ticker'), exc)
+            if unsupported:
+                LOG.info('FINAL-MINUTE UNSUPPORTED %s',
+                         ', '.join('%s:%s' % pair for pair in sorted(unsupported.items())))
             selected = choose(candidates)
             if selected:
                 LOG.info('SELECT %s %s distance=%.5f%% ask=%.3f gross=%.3fx cost=%.2f',
@@ -281,7 +291,7 @@ def loop(args):
                 else:
                     LOG.info('READ ONLY: simulated entry disabled')
             else:
-                LOG.info('SCAN supported_markets=%d candidates=0 mode=%s',
+                LOG.info('SCAN discovered_markets=%d candidates=0 mode=%s',
                          len(markets), state['mode'])
         time.sleep(max(0, args.interval - (time.monotonic() - tick)))
 
