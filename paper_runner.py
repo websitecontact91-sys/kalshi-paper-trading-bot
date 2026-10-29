@@ -275,7 +275,7 @@ def loop(args):
             persist(state, push=True)
     cf = KalshiCFPrices()
     # Only explicitly reviewed Pyth feed IDs are enabled. Missing keys fail closed.
-    pyth_ids = json.loads(os.getenv('PYTH_VERIFIED_FEED_IDS', '{}'))
+    pyth_ids = json.loads(os.getenv('PYTH_VERIFIED_FEED_IDS') or '{}')
     if not isinstance(pyth_ids, dict):
         raise ValueError('PYTH_VERIFIED_FEED_IDS must be a JSON object')
     pyth = PythPrices(pyth_ids)
