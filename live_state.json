@@ -1,6 +1,6 @@
 {
-  "account_cash": "20.3668",
-  "account_cash_checked_at": "2026-10-29T23:14:01.311966+00:00",
+  "account_cash": "20.5651",
+  "account_cash_checked_at": "2026-10-29T23:15:32.839652+00:00",
   "account_scope": "production:0:31c8bad33d4eb70d",
   "attempted_rounds": [
     "1992567",
@@ -315,67 +315,73 @@
       "ticker": "KXBNB15M-26OCT291830-30",
       "won": true,
       "worst_case_debit": "1.00"
+    },
+    {
+      "ask": "0.8100",
+      "balance_precision": "0.01",
+      "budget": "1.00",
+      "cash_payout": "1",
+      "client_order_id": "af7740c9-3878-5def-bdf0-84174402edbb",
+      "close_time": "2026-10-29T23:15:00Z",
+      "current": "111.41391000",
+      "distance_pct": "0.01443955846719913847258368482",
+      "execution": {
+        "debit": "0.801700",
+        "displayed_multiplier": "1.25",
+        "fees": "0.011700",
+        "fill_ids": [
+          "0727ae35-6371-937b-3fb8-1af283e9721c"
+        ],
+        "fills": [
+          {
+            "fees": "0.011700",
+            "fill_id": "0727ae35-6371-937b-3fb8-1af283e9721c",
+            "filled_at": "2026-10-29T23:14:03.100274+00:00",
+            "is_taker": true,
+            "observed_at": "2026-10-29T23:14:04.851926+00:00",
+            "price": "0.7900",
+            "quantity": "1.00"
+          }
+        ],
+        "first_filled_at": "2026-10-29T23:14:03.100274+00:00",
+        "last_filled_at": "2026-10-29T23:14:03.100274+00:00",
+        "payout": "1.00",
+        "principal": "0.790000",
+        "quantity": "1.00",
+        "weighted_price": "0.7900"
+      },
+      "fee_multiplier": "1",
+      "observation_time": 1793315640.0,
+      "order_id": "01a189f1-1e78-7884-aca0-f5d5725cea0d",
+      "pnl": "0.198300",
+      "prepared_at": "2026-10-29T23:14:01.409730+00:00",
+      "probability_field": "kalshi_orderbook:1-best_YES_bid",
+      "quantity": "1.00",
+      "quoted_debit": "0.83",
+      "quoted_fees": "0.020000",
+      "quoted_payout": "1.00",
+      "quoted_principal": "0.810000",
+      "result": "NO",
+      "risk_flags": [
+        "actual_payout_multiple_out_of_band",
+        "fill_price_out_of_band"
+      ],
+      "round_key": "1992573",
+      "series_ticker": "KXBRENT15M",
+      "settled_at": "2026-10-29T23:15:23.520567+00:00",
+      "side": "NO",
+      "source_sha": "1face99419d83668c05cc3f20104695010cd10f1",
+      "stage": "SETTLED",
+      "submitted_at": "2026-10-29T23:14:03.065770+00:00",
+      "target": "111.43",
+      "ticker": "KXBRENT15M-26OCT291915-15",
+      "won": true,
+      "worst_case_debit": "1.00"
     }
   ],
   "mode": "HALTED",
-  "pending": {
-    "ask": "0.8100",
-    "balance_precision": "0.01",
-    "budget": "1.00",
-    "client_order_id": "af7740c9-3878-5def-bdf0-84174402edbb",
-    "close_time": "2026-10-29T23:15:00Z",
-    "current": "111.41391000",
-    "distance_pct": "0.01443955846719913847258368482",
-    "execution": {
-      "debit": "0.801700",
-      "displayed_multiplier": "1.25",
-      "fees": "0.011700",
-      "fill_ids": [
-        "0727ae35-6371-937b-3fb8-1af283e9721c"
-      ],
-      "fills": [
-        {
-          "fees": "0.011700",
-          "fill_id": "0727ae35-6371-937b-3fb8-1af283e9721c",
-          "filled_at": "2026-10-29T23:14:03.100274+00:00",
-          "is_taker": true,
-          "observed_at": "2026-10-29T23:14:04.851926+00:00",
-          "price": "0.7900",
-          "quantity": "1.00"
-        }
-      ],
-      "first_filled_at": "2026-10-29T23:14:03.100274+00:00",
-      "last_filled_at": "2026-10-29T23:14:03.100274+00:00",
-      "payout": "1.00",
-      "principal": "0.790000",
-      "quantity": "1.00",
-      "weighted_price": "0.7900"
-    },
-    "fee_multiplier": "1",
-    "observation_time": 1793315640.0,
-    "order_id": "01a189f1-1e78-7884-aca0-f5d5725cea0d",
-    "prepared_at": "2026-10-29T23:14:01.409730+00:00",
-    "probability_field": "kalshi_orderbook:1-best_YES_bid",
-    "quantity": "1.00",
-    "quoted_debit": "0.83",
-    "quoted_fees": "0.020000",
-    "quoted_payout": "1.00",
-    "quoted_principal": "0.810000",
-    "risk_flags": [
-      "actual_payout_multiple_out_of_band",
-      "fill_price_out_of_band"
-    ],
-    "round_key": "1992573",
-    "series_ticker": "KXBRENT15M",
-    "side": "NO",
-    "source_sha": "1face99419d83668c05cc3f20104695010cd10f1",
-    "stage": "FILLED",
-    "submitted_at": "2026-10-29T23:14:03.065770+00:00",
-    "target": "111.43",
-    "ticker": "KXBRENT15M-26OCT291915-15",
-    "worst_case_debit": "1.00"
-  },
-  "realized_pnl": "0.516900",
+  "pending": null,
+  "realized_pnl": "0.715200",
   "schema": "kalshi-live.v1",
   "session_id": "2c127708-6f99-4d8c-8197-4de798ce4966",
   "stop_reason": null
