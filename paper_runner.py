@@ -151,6 +151,18 @@ class KalshiCFPrices:
         return px, ts
 
 
+def round_id(close_time):
+    """Canonical UTC 15-minute closing bucket across all market series.
+
+    A market closing exactly on a quarter-hour belongs to that quarter-hour;
+    nearby close timestamps in the same bucket share one global trade slot.
+    """
+    stamp = parse_time(close_time)
+    if stamp is None or not math.isfinite(stamp):
+        raise ValueError('Invalid round close time')
+    return str(math.ceil(stamp / 900))
+
+
 def choose(candidates):
     if not candidates:
         return None
@@ -196,7 +208,7 @@ def evaluate_market(m, px, current_time, book, balance):
                             'gross_payout': gross, 'distance_pct': distance,
                             'target': target, 'underlying': px, 'count': count,
                             'cost': cost, 'fee_reserve': fee,
-                            'close_time': m['close_time'], 'round_id': m['close_time']})
+                            'close_time': m['close_time'], 'round_id': round_id(m['close_time'])})
         return options
     except (KeyError, ValueError, TypeError, ZeroDivisionError, OverflowError):
         return []
@@ -257,7 +269,9 @@ def loop(args):
                 close = parse_time(m.get('close_time'))
                 if close is None or not 0 < close - time.time() <= 60:
                     continue
-                if any(t.get('round_id') == m['close_time'] for t in state['history']):
+                if any(str(t.get('round_id')) == round_id(m['close_time']) for t in state['history']):
+                    continue
+                if state.get('trade') and str(state['trade'].get('round_id')) == round_id(m['close_time']):
                     continue
                 series = m.get('series_ticker') or m['ticker'].split('-')[0]
                 if series not in CF_INDEX_IDS:
