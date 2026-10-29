@@ -39,6 +39,7 @@ def test_all_30_mapped_series_reach_entry_evaluation():
             "status": "open", "strike_type": "greater_or_equal",
             "floor_strike": 100.0, "close_time": now + 45,
             "yes_ask_dollars": "0.85", "no_ask_dollars": "0.15",
+                "_kalshi_series_fee_multiplier": 1.0,
         }
         with patch("paper_runner.best_bid_depth", return_value=20):
             candidates = evaluate_market(market, 105.0, now, {}, 1000.0)
