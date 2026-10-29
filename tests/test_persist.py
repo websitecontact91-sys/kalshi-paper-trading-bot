@@ -33,7 +33,7 @@ def repository(tmp_path):
 def pending(root):
     state = load(root / "paper_state.json")
     record_entry(state, "1992550", {"ticker": "KXSOL15M-TEST", "side": "YES",
-                                    "budget": "5.00", "debit": "5.00", "payout": "5.69"})
+                                    "budget": "1.00", "debit": "1.00", "payout": "1.13"})
     return state
 
 
@@ -55,7 +55,7 @@ def test_real_local_remote_persists_state_and_derived_ledger(repository):
                       source_sha=source, sleep=lambda _: None)
     assert receipt["remote"] is True
     saved = remote_state(remote)
-    assert saved["balance"] == "995.00"
+    assert saved["balance"] == "999.00"
     assert saved["rounds_traded"] == ["1992550"]
     assert "KXSOL15M-TEST" in git(remote, "show", "main:paper_ledger.csv")
     assert git(root, "diff", "--name-only", source, "HEAD") == "paper_ledger.csv\npaper_state.json"
@@ -98,7 +98,7 @@ def test_successful_push_with_lost_ack_is_not_double_applied(repository):
                      source_sha=source, run=lose_ack, sleep=lambda _: None)
     assert result["remote"] is True
     assert len(pushes) == 1
-    assert remote_state(remote)["balance"] == "995.00"
+    assert remote_state(remote)["balance"] == "999.00"
     assert len(remote_state(remote)["rounds_traded"]) == 1
 
 
@@ -124,7 +124,7 @@ def test_remote_code_change_saves_entry_without_loading_or_overwriting_new_sourc
     assert (root / "runner.py").read_text() == "# fixed tested source\n"
     assert git(remote, "show", "main:runner.py") == "# newer untested source"
     assert remote_state(remote)["pending"]["ticker"] == "KXSOL15M-TEST"
-    assert remote_state(remote)["balance"] == "995.00"
+    assert remote_state(remote)["balance"] == "999.00"
     assert git(remote, "diff", "--name-only", deployment, "main") == "paper_ledger.csv\npaper_state.json"
 
 
@@ -140,7 +140,7 @@ def test_source_handoff_persists_loss_and_stop_without_reset(repository, tmp_pat
     assert result["remote_source_sha"] == deployment
     assert saved["mode"] == "STOPPED"
     assert saved["pending"] is None
-    assert saved["balance"] == "995.00"
+    assert saved["balance"] == "999.00"
     assert len(saved["history"]) == 1
     assert saved["history"][0]["won"] is False
     assert saved["rounds_traded"] == ["1992550"]
@@ -166,7 +166,7 @@ def test_lost_ack_during_source_handoff_saves_exactly_one_entry(repository, tmp_
     assert result["restart_required"] is True
     assert len(pushes) == 1
     assert result["state_commit"] == git(remote, "rev-parse", "main")
-    assert remote_state(remote)["balance"] == "995.00"
+    assert remote_state(remote)["balance"] == "999.00"
     assert remote_state(remote)["rounds_traded"] == ["1992550"]
 
 
@@ -189,7 +189,7 @@ def test_source_deployment_after_lost_push_ack_is_a_confirmed_handoff(repository
     assert result["remote_source_sha"] == git(remote, "rev-parse", "main")
     assert len(pushes) == 1
     assert remote_state(remote)["rounds_traded"] == ["1992550"]
-    assert remote_state(remote)["balance"] == "995.00"
+    assert remote_state(remote)["balance"] == "999.00"
     assert (root / "runner.py").read_text() == "# fixed tested source\n"
     assert git(remote, "show", "main:runner.py") == "# newer untested source"
 
@@ -227,7 +227,7 @@ def test_conflicting_state_and_source_update_is_still_a_failure(repository, tmp_
     other = other_checkout(root, tmp_path)
     other_state = load(other / "paper_state.json")
     record_entry(other_state, "1992551", {"ticker": "KXBTC15M-OTHER", "side": "NO",
-                                         "debit": "5.00", "payout": "5.60"})
+                                         "debit": "1.00", "payout": "1.12"})
     save(other / "paper_state.json", other_state)
     (other / "runner.py").write_text("# newer source and competing state\n")
     git(other, "add", ".")
@@ -245,7 +245,7 @@ def test_competing_state_writer_cannot_be_silently_overwritten(repository, tmp_p
     other = other_checkout(root, tmp_path)
     other_state = load(other / "paper_state.json")
     record_entry(other_state, "1992551", {"ticker": "KXBTC15M-OTHER", "side": "NO",
-                                         "debit": "5.00", "payout": "5.60"})
+                                         "debit": "1.00", "payout": "1.12"})
     save(other / "paper_state.json", other_state)
     git(other, "add", ".")
     git(other, "commit", "-m", "Concurrent state write")

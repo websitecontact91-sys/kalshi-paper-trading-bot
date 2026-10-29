@@ -89,9 +89,9 @@ def test_void_refunds_actual_debit(live_engine, status):
     engine.tick()
     client.status, client.result = status,'void'
     engine.tick()
-    assert engine.state['balance'] == '1000.00'
+    assert D(engine.state['balance']) == D('1000.00')
     assert engine.state['history'][-1]['result'] == 'VOID'
-    assert engine.state['history'][-1]['pnl'] == '0.00'
+    assert D(engine.state['history'][-1]['pnl']) == D('0.00')
     assert load(path)['mode'] == 'SCANNING'
 
 def test_persistence_failure_aborts_without_announcing_entry(live_engine):
@@ -115,11 +115,32 @@ def test_quote_amount_is_not_rebuilt_from_displayed_multiplier(live_engine):
     engine, _, _, _ = live_engine
     engine.tick()
     trade = engine.state['pending']
-    assert trade['payout'] == '5.69'
+    assert trade['payout'] == '1.13'
     assert trade['displayed_multiplier'] == '1.14'
     assert D(trade['payout']) != D(trade['displayed_multiplier'])*D(trade['budget'])
     assert trade['quote_source'] == 'controlled_synthetic_fixture'
     assert trade['ui_parity_verified'] is False
+
+
+@pytest.mark.parametrize('budget,debit,payout', [('5.00','5.00','5.69'),
+                                               ('5.00','0.50','0.57')])
+def test_old_or_oversized_cached_quote_cannot_create_a_new_trade(live_engine, budget, debit, payout):
+    from payout_quote import PayoutQuote
+    from quote_adapter import QuoteDetails
+    engine, client, _, _ = live_engine
+    original = client._snapshot
+
+    def old_quote(market):
+        snapshot = original(market)
+        snapshot['quotes']['YES'] = QuoteDetails(PayoutQuote(budget, debit, payout),
+            D(payout), D('0.01'), D(debit)-D('0.01'), 'synthetic_old_budget')
+        return snapshot
+
+    client._snapshot = old_quote
+    engine.tick()
+    assert engine.state['pending'] is None
+    assert engine.state['balance'] == '1000.00'
+    assert engine.rounds[round_key(client.close_time)]['rejections'][client.markets[0]['ticker']+':YES'] == 'trade_budget_exceeds_limit'
 
 def test_coverage_and_round_reasons_are_durable(live_engine):
     engine, client, _, path = live_engine
@@ -162,7 +183,7 @@ def test_source_update_handoff_retains_durable_transition_and_stops_io(live_engi
     assert any(e['kind'] == 'SOURCE_UPDATE_HANDOFF' for e in engine.events)
     if transition == 'entry':
         assert engine.state['pending'] is not None
-        assert engine.state['balance'] == '995.00'
+        assert engine.state['balance'] == '999.0079'
         assert any(e['kind'] == 'PAPER_ENTRY' for e in engine.events)
     elif transition in ('win', 'loss'):
         assert engine.state['pending'] is None
@@ -358,9 +379,9 @@ def test_configured_api_paper_quotes_enter_and_settle_without_ui_capture(tmp_pat
     assert trade['probability_field'] == 'kalshi_orderbook:1-best_NO_bid'
     assert D(trade['ask']) == D('0.87')
     assert D(trade['summary_ask']) == D('0.79')
-    assert D(trade['payout']) == D('5.69')
+    assert D(trade['payout']) == D('1.13')
     assert trade['displayed_multiplier'] == '1.14'
-    assert D('0') < D(trade['debit']) <= D('5')
+    assert D('0') < D(trade['debit']) <= D('1')
     assert D(trade['principal']) + D(trade['fees']) == D(trade['debit'])
     assert engine.rounds[round_key(close)]['rejections']['KXDJIA15M:*'] == 'no_markets'
 

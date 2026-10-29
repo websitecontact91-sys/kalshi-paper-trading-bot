@@ -14,6 +14,7 @@ from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from urllib.parse import urlparse
 
 from payout_quote import PayoutQuote, as_decimal
+from trade_config import TRADE_BUDGET
 
 NORMALIZED_SCHEMA = "kalshi-paper.normalized-quote.v1"
 # Kalshi's April 17, 2026 changelog made fractional trading unconditional for
@@ -85,7 +86,7 @@ def _path_value(payload, path):
         raise QuoteUnavailable("source field path does not resolve") from exc
 
 
-def build_quote(raw, budget=Decimal("5.00")):
+def build_quote(raw, budget=TRADE_BUDGET):
     """Verify an audited normalized capture; never guess Kalshi response fields.
 
     Required provenance: an HTTPS Kalshi GET capture, raw JSON string + its SHA256,
@@ -93,6 +94,8 @@ def build_quote(raw, budget=Decimal("5.00")):
     principal to their exact raw JSON locations. ``adapter_verified`` is an audit
     attestation supplied by a separately verified capture adapter, not something
     this function infers from a URL or a screenshot. Missing evidence fails closed.
+    An explicitly supplied historical budget only validates archived evidence;
+    the execution and state-entry boundaries enforce the current trade cap.
     """
     if not isinstance(raw, dict) or raw.get("schema") != NORMALIZED_SCHEMA:
         raise QuoteUnavailable("unsupported normalized quote schema")
@@ -230,8 +233,8 @@ def documented_taker_cost(ask, quantity, multiplier, balance_precision):
 
 
 def build_modeled_quote(ask, available_quantity, series, event, market, *,
-                        budget=Decimal("5.00"), balance_precision=None, now=None):
-    """Size <=$5 at one observed executable price level in 0.01-contract steps.
+                        budget=TRADE_BUDGET, balance_precision=None, now=None):
+    """Size <=$1 including fees at one price level in 0.01-contract steps.
 
     The caller must supply that level's actual available quantity, not cumulative
     depth at different prices. This is a documented simulation, never a verified
@@ -241,8 +244,8 @@ def build_modeled_quote(ask, available_quantity, series, event, market, *,
     price = _number(ask, "ask")
     depth = _number(available_quantity, "available quantity")
     amount = _number(budget, "budget")
-    if not 0 < price < 1 or depth <= 0 or not 0 < amount <= Decimal("5.00"):
-        raise QuoteUnavailable("invalid ask, depth, or maximum $5 budget")
+    if not 0 < price < 1 or depth <= 0 or not 0 < amount <= TRADE_BUDGET:
+        raise QuoteUnavailable("invalid ask, depth, or maximum $1 fee-inclusive budget")
     if balance_precision is None:
         raise QuoteUnavailable("model balance precision is unknown")
     if market.get("market_type") != "binary":

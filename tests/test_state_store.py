@@ -8,9 +8,9 @@ import state_store as store
 
 
 def trade(**changes):
-    item = {"ticker": "KXSOL15M-TEST", "side": "YES", "budget": "5.00",
-            "debit": "5.00", "payout": "5.69", "fees": "0.03",
-            "quantity": "5.69", "entered_at": 1793294966.0}
+    item = {"ticker": "KXSOL15M-TEST", "side": "YES", "budget": "1.00",
+            "debit": "1.00", "payout": "1.13", "fees": "0.03",
+            "quantity": "1.13", "entered_at": 1793294966.0}
     item.update(changes)
     return item
 
@@ -23,8 +23,8 @@ def test_duplicate_entry_and_saved_pending_are_refused(tmp_path):
     path = tmp_path / "state.json"
     store.save(path, state)
     loaded = store.load(path)
-    assert loaded["pending"]["payout"] == "5.69"
-    assert loaded["balance"] == "995.00"
+    assert loaded["pending"]["payout"] == "1.13"
+    assert loaded["balance"] == "999.00"
     assert not store.can_enter(loaded, "1992551")
     assert loaded["pending"]["round_key"] in loaded["rounds_traded"]
 
@@ -61,7 +61,7 @@ def test_crash_before_save_discards_only_uncommitted_draft(tmp_path):
     store.record_entry(after_restart, "1992550", trade())
     store.save(path, after_restart)
     restored = store.load(path)
-    assert restored["balance"] == "995.00"
+    assert restored["balance"] == "999.00"
     assert restored["rounds_traded"] == ["1992550"]
 
 
@@ -173,3 +173,43 @@ def test_reset_cannot_discard_unsettled_position(tmp_path):
     store.save(path, state)
     with pytest.raises(store.StateError, match="unsettled"):
         store.archive_and_reset(path, confirm=True)
+
+
+@pytest.mark.parametrize("budget,debit", [("5.00", "5.00"), ("5.00", "0.99"),
+                                          ("1.01", "1.01")])
+def test_new_entries_over_one_dollar_budget_are_refused_without_mutation(budget, debit):
+    state = store.new_state()
+    before = copy.deepcopy(state)
+    with pytest.raises(store.StateError, match="fee-inclusive"):
+        store.record_entry(state, "1992550", trade(budget=budget, debit=debit))
+    assert state == before
+
+
+@pytest.mark.parametrize("result,expected,mode", [("yes", "1000.69", "SCANNING"),
+                                                ("no", "995.00", "STOPPED")])
+def test_old_five_dollar_pending_trade_is_preserved_and_settled_after_budget_change(tmp_path, result, expected, mode):
+    # This is a saved pre-change position, not a newly permitted $5 entry.
+    old = {"version": 1, "mode": "WAITING_FOR_SETTLEMENT", "balance": 995.0,
+           "history": [], "trade": {"ticker": "KXSOL15M-OLD", "side": "YES",
+           "cost": 5.0, "count": 5.69, "fee_reserve": 0.0497,
+           "round_id": "1992550", "close_time": "2026-10-29T17:30:00Z"}}
+    path = tmp_path / "old-state.json"
+    path.write_text(json.dumps(old))
+    before = path.read_bytes()
+    state = store.load(path)
+    assert path.read_bytes() == before
+    assert Decimal(state["pending"]["budget"]) == Decimal("5.00")
+    assert Decimal(state["pending"]["debit"]) == Decimal("5.00")
+    assert Decimal(state["pending"]["payout"]) == Decimal("5.69")
+    store.save(path, state)
+    restarted = store.load(path)
+    store.record_settlement(restarted, result)
+    assert Decimal(restarted["balance"]) == Decimal(expected)
+    assert restarted["mode"] == mode
+    assert Decimal(restarted["history"][0]["debit"]) == Decimal("5.00")
+    if mode == "SCANNING":
+        store.record_entry(restarted, "1992551", trade())
+        assert restarted["pending"]["budget"] == "1.00"
+        assert len(restarted["history"]) == 1
+    else:
+        assert not store.can_enter(restarted, "1992551")

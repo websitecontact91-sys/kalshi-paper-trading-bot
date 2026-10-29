@@ -7,15 +7,15 @@ from selection import Candidate, distance_pct, eligible, rank, rejection_reason,
 
 
 def C(ticker="A", side="YES", ask="0.87", current="101", target="100",
-      payout="5.69", fresh=True):
+      payout="1.138", fresh=True):
     return Candidate(ticker, side, D(ask), D(current), D(target),
-                     PayoutQuote.from_kalshi("5.00", "5.00", payout), fresh)
+                     PayoutQuote.from_kalshi("1.00", "1.00", payout), fresh)
 
 
 def test_distance_ranks_only_primary_filter_passes():
     winner = C("eligible", current="101")
     bad_ask = C("bad-ask", ask="0.79", current="120")
-    bad_payout = C("bad-payout", payout="6.50", current="130")
+    bad_payout = C("bad-payout", payout="1.30", current="130")
     assert select([bad_ask, bad_payout, winner]) == winner
 
 
@@ -27,16 +27,16 @@ def test_single_negative_or_zero_distance_candidate_still_selected(current):
 
 
 def test_largest_signed_distance_not_payout_is_primary_rank():
-    larger_margin = C("margin", current="102", payout="5.50")
-    larger_payout = C("payout", current="101", payout="6.00")
+    larger_margin = C("margin", current="102", payout="1.10")
+    larger_payout = C("payout", current="101", payout="1.20")
     assert select([larger_payout, larger_margin]) == larger_margin
 
 
 def test_equal_distance_prefers_exact_payout_then_ticker_and_side():
-    low_payout = C("A", current="100", payout="5.50")
-    high_yes = C("A", current="100", payout="5.69")
-    high_no = C("A", side="NO", current="100", payout="5.69")
-    high_late_ticker = C("Z", current="100", payout="5.69")
+    low_payout = C("A", current="100", payout="1.10")
+    high_yes = C("A", current="100", payout="1.138")
+    high_no = C("A", side="NO", current="100", payout="1.138")
+    high_late_ticker = C("Z", current="100", payout="1.138")
     assert rank([high_late_ticker, high_yes, low_payout, high_no]) == [
         high_no, high_yes, high_late_ticker, low_payout]
     assert select([high_yes, high_no]) is high_no
@@ -45,7 +45,7 @@ def test_equal_distance_prefers_exact_payout_then_ticker_and_side():
 def test_no_eligible_candidate_has_explicit_reasons():
     stale = C(fresh=False)
     bad_ask = C(ask="0.91")
-    bad_payout = C(payout="5.00")
+    bad_payout = C(payout="1.00")
     assert select([stale, bad_ask, bad_payout]) is None
     assert select([]) is None
     assert rejection_reason(stale) == "stale_or_closed"

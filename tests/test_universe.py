@@ -226,8 +226,8 @@ class FakeClient:
         if series in self.snapshot_errors:
             raise self.snapshot_errors[series]
         detail = QuoteDetails(
-            quote=PayoutQuote.from_kalshi("5", "5", "5.69"), quantity=D("5.69"),
-            fees=D("0.0497"), principal=D("4.9503"), source="synthetic_test_only",
+            quote=PayoutQuote.from_kalshi("1.00", "0.9921", "1.13"), quantity=D("1.13"),
+            fees=D("0.0090"), principal=D("0.9831"), source="synthetic_test_only",
         )
         quote_map = {} if series in self.missing_quotes else {"YES": detail}
         rejections = {"NO": "ask_out_of_band"}

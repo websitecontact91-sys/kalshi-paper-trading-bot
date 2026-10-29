@@ -18,9 +18,12 @@ import tempfile
 import time
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
+from trade_config import TRADE_BUDGET
 
 SCHEMA = 1
-MAX_BUDGET = Decimal("5.00")
+# Historical validation includes trades created before the $1 rule. New entries
+# are checked separately, so reducing the cap never invalidates a saved trade.
+HISTORICAL_MAX_BUDGET = Decimal("5.00")
 MODES = {"SCANNING", "WAITING_FOR_SETTLEMENT", "STOPPED"}
 MONEY_FIELDS = {
     "budget", "debit", "payout", "fees", "unused_cash", "pnl", "cash_payout",
@@ -130,11 +133,11 @@ def _trade(raw, *, legacy=False, round_key=None):
     if not isinstance(ticker, str) or not ticker.strip() or side not in {"YES", "NO"}:
         raise StateError("Trade requires ticker and YES/NO side")
     trade["side"] = side
-    budget = _decimal(trade.get("budget", "5.00"), "budget")
+    budget = _decimal(trade.get("budget", TRADE_BUDGET), "budget")
     debit = _decimal(trade.get("debit"), "debit")
     payout = _decimal(trade.get("payout"), "payout")
     fees = _decimal(trade.get("fees", "0"), "fees")
-    if not (0 < debit <= budget <= MAX_BUDGET) or payout <= 0 or not 0 <= fees <= debit:
+    if not (0 < debit <= budget <= HISTORICAL_MAX_BUDGET) or payout <= 0 or not 0 <= fees <= debit:
         raise StateError("Invalid budget, debit, payout or fees")
     trade.update(budget=_s(budget), debit=_s(debit), payout=_s(payout), fees=_s(fees))
     unused = budget - debit
@@ -319,6 +322,9 @@ def record_entry(state, round_key, trade):
     if not can_enter(state, key):
         raise StateError("Paper entry refused: pending, stopped, or round already traded")
     pending = _trade(trade, round_key=key)
+    if (_decimal(pending["budget"], "budget") > TRADE_BUDGET
+            or _decimal(pending["debit"], "debit") > TRADE_BUDGET):
+        raise StateError("New paper entry exceeds the $1 fee-inclusive budget")
     if _decimal(pending["debit"], "debit") > _decimal(state["balance"], "balance"):
         raise StateError("Insufficient paper cash")
     pending["event_id"] = f"{state['session_id']}:{key}"

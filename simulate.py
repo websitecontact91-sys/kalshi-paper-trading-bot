@@ -12,6 +12,7 @@ from persistence import persist
 from quote_adapter import QuoteDetails
 from state_store import can_enter, load, new_state
 from timing import round_key
+from trade_config import TRADE_BUDGET
 
 SCENARIOS = ('win', 'loss', 'tie', 'no_candidate', 'late_expiry', 'delayed_result')
 
@@ -44,8 +45,8 @@ class FakeKalshiClient:
         return copy.deepcopy(self.markets)
 
     def _snapshot(self, market):
-        q = PayoutQuote.from_kalshi('5.00', '5.00', '5.69')
-        detail = QuoteDetails(q, D('5.69'), D('0.0497'), D('4.9503'),
+        q = PayoutQuote.from_kalshi(TRADE_BUDGET, '0.9921', '1.13')
+        detail = QuoteDetails(q, D('1.13'), D('0.0090'), D('0.9831'),
             'controlled_synthetic_fixture', False, {'synthetic': True})
         return {'market': copy.deepcopy(market), 'current': D(self.current),
             'observation_time': self.clock() - (16 if self.stale else 0),
@@ -97,7 +98,7 @@ def run_scenario(name):
         else:
             assert engine.state['pending'] is not None
             assert len(engine.state['rounds_traded']) == 1
-            assert D(engine.state['balance']) == D('995')
+            assert D(engine.state['balance']) == D('999.0079')
             assert abs(engine.state['pending']['seconds_to_close']-52.9) < 0.001
             if name == 'tie':
                 assert engine.state['pending']['ticker'] == 'KXBTC15M-TEST'
@@ -113,7 +114,7 @@ def run_scenario(name):
             engine.tick()
             assert engine.state['pending'] is None
             assert len(engine.state['history']) == 1
-            expected = D('995.00') if name == 'loss' else D('1000.69')
+            expected = D('999.0079') if name == 'loss' else D('1000.1379')
             assert D(engine.state['balance']) == expected
             if name == 'loss':
                 restarted = PaperEngine(client, load(path), persist_state=durable, paper=True, clock=clock)

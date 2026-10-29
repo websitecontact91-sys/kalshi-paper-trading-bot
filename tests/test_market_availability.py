@@ -63,8 +63,8 @@ def test_api_paper_mode_does_not_need_ui_proof_or_all_markets_open():
 
         def snapshot(self, market, **kwargs):
             detail = QuoteDetails(
-                quote=PayoutQuote.from_kalshi("5", "5", "5.69"),
-                quantity=Decimal("5.69"), fees=Decimal("0.0497"), principal=Decimal("4.9503"),
+                quote=PayoutQuote.from_kalshi("1.00", "0.9921", "1.13"),
+                quantity=Decimal("1.13"), fees=Decimal("0.0090"), principal=Decimal("0.9831"),
                 source="synthetic_test_only", ui_parity_verified=False,
             )
             return {

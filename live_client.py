@@ -10,6 +10,7 @@ from quote_adapter import (FEE_ROUNDING_URL, FEE_SCHEDULE_URL, FIXED_POINT_URL,
                            QuoteUnavailable, build_modeled_quote, build_quote)
 from reference_prices import ReferencePrices
 from timing import observation_fresh, timestamp
+from trade_config import TRADE_BUDGET
 from universe import UNIVERSE, check_compatibility
 
 
@@ -91,8 +92,8 @@ def quote_policy(path):
                 or actual.fees != modeled.fees or actual.principal != modeled.principal):
             result['reason'] = 'captured_quote_fee_model_mismatch'
             return result
-        if actual.quote.debit != Decimal('5.00') or actual.quote.payout != Decimal('5.69'):
-            result['reason'] = 'required_sol_quote_parity_unverified'
+        if actual.quote.budget != TRADE_BUDGET or actual.quote.debit > TRADE_BUDGET:
+            result['reason'] = 'captured_quote_current_budget_unverified'
             return result
         result.update(ready=True, verified=True, ui_parity_verified=True,
                       reason=None, evidence=actual.evidence)
@@ -197,7 +198,7 @@ class LiveKalshiClient:
                 opposite = 'NO' if side == 'YES' else 'YES'
                 result['ask_sources'][side] = 'kalshi_orderbook:1-best_' + opposite + '_bid'
                 result['quotes'][side] = build_modeled_quote(price, quantity, metadata, event, market,
-                    balance_precision=self.policy['balance_precision'], now=self.clock())
+                    budget=TRADE_BUDGET, balance_precision=self.policy['balance_precision'], now=self.clock())
             except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
                 result['rejections'][side] = ('quote_unavailable:' + str(exc))
         return result

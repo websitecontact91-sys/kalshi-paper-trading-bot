@@ -20,10 +20,10 @@ Workflow reports record actual scans, closing-minute coverage, handoff gaps and 
 
 - Exactly 30 mapped 15-minute series: 11 Kalshi-hosted CF Benchmarks references and 19 Kalshi-hosted Pyth references, defined once in `universe.py`. No direct external price provider is used.
 - The five excluded families are TON, coffee, S&P 500, Nasdaq-100 and comparative/highest-return crypto. Their existing exact aliases are listed in `EXCLUDED_FAMILIES`.
-- One $5 budget allocation, never split among markets. Actual cash debit includes fees and is positive and at most $5. Unused cash remains in the balance.
+- One $1 budget allocation, never split among markets. Actual cash debit includes fees and is positive and at most $1. Unused cash remains in the balance. `trade_config.TRADE_BUDGET` is the shared limit for all new entries; existing $5 history and pending positions retain their original recorded amounts.
 - The selected side's executable ask must be 0.80–0.90 inclusive. This ask is the probability field used; there is no independent probability model.
 - The exact payout is the amount returned on a winning position. The exact multiplier is payout / actual debit. The displayed multiplier is rounded to two decimal places with `ROUND_HALF_UP` and must be 1.10–1.20 inclusive. Thus a raw 1.095× qualifies as displayed 1.10×.
-- A payout of $5.69 on a $5 debit is exactly 1.138× and displays as 1.14×. Display rounding never changes the cash payout to $5.70.
+- For example, the $1 direct-member paper model at an 87-cent ask buys 1.13 contracts for $0.9921 including fees and pays exactly $1.13 if it wins. Its displayed multiplier is 1.14×; multiplying a rounded multiplier by the budget never determines the cash payout. The historical $5.69 payout regression remains in the tests.
 - Eligible candidates rank by signed percentage distance, then exact multiplier, ticker and side. YES distance is 100 × (current − target) / target; NO distance is 100 × (target − current) / target. There is no positive or minimum distance gate.
 - Monitor before the final minute. Entry is allowed only when `0 < close_time − now <= 60` seconds. Preserve the existing immediate in-window trigger, including entry 52.9 seconds before close.
 - References must be no more than 15 seconds old and no more than 5 seconds in the future. CF cached observations are reused for at most 8 seconds; the same 15-second freshness gate applies at entry.

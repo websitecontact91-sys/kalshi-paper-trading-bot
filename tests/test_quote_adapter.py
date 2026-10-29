@@ -21,7 +21,7 @@ def metadata():
              "settlement_bounds_type": "default", "fee_waiver_expiration_time": None})
 
 
-def modeled(*, ask="0.87", depth="100", precision="0.01", budget="5.00", changes=None):
+def modeled(*, ask="0.87", depth="100", precision="0.01", budget="1.00", changes=None):
     series, event, market = metadata()
     if changes:
         for obj, values in zip((series, event, market), changes):
@@ -53,11 +53,11 @@ def test_screenshot_arithmetic_fixture_does_not_claim_live_capture():
     q = PayoutQuote.from_kalshi(raw["budget"], raw["debit"], raw["payout"])
     assert q.payout == D("5.69") and q.displayed_multiplier == D("1.14")
     with pytest.raises(QuoteUnavailable):
-        build_quote(raw)
+        build_quote(raw, budget="5.00")
 
 
 def test_normalized_parser_matches_observed_fields_but_does_not_infer_ui_parity():
-    q = build_quote(synthetic_normalized_capture())
+    q = build_quote(synthetic_normalized_capture(), budget="5.00")
     assert q.quote.payout == D("5.69")
     assert q.quote.displayed_multiplier == D("1.14")
     assert q.source == "kalshi_response"
@@ -79,14 +79,14 @@ def test_unverified_or_inconsistent_capture_rejected(change):
     raw = synthetic_normalized_capture()
     change(raw["provenance"])
     with pytest.raises(QuoteUnavailable):
-        build_quote(raw)
+        build_quote(raw, budget="5.00")
 
 
 def test_normalized_payout_cannot_be_changed_to_rounded_display_product():
     raw = synthetic_normalized_capture()
     raw["payout"] = "5.70"
     with pytest.raises(QuoteUnavailable, match="differs"):
-        build_quote(raw)
+        build_quote(raw, budget="5.00")
 
 
 def test_unknown_account_precision_is_a_blocker():
@@ -100,13 +100,13 @@ def test_unsupported_account_precision_rejected(precision):
         modeled(precision=precision)
 
 
-def test_documented_fee_model_can_reproduce_numeric_example_without_ui_parity_claim():
-    # Synthetic ask/account inputs, not the missing historical SOL raw quote.
+def test_documented_one_dollar_fee_model_sizes_without_ui_parity_claim():
+    # Synthetic current-budget inputs; not a captured retail quote.
     details = modeled(ask="0.87", precision="0.01")
-    assert details.quantity == D("5.69")
-    assert details.quote.debit == D("5.00")
-    assert details.quote.payout == D("5.69")
-    assert details.quote.displayed_multiplier == D("1.14")
+    assert details.quantity == D("1.13")
+    assert details.quote.debit == D("1.00")
+    assert details.quote.payout == D("1.13")
+    assert details.quote.displayed_multiplier == D("1.13")
     assert details.source == "documented_fee_model"
     assert details.ui_parity_verified is False
     assert details.principal + details.fees == details.quote.debit
@@ -118,7 +118,7 @@ def test_direct_member_rounding_is_not_silently_whole_cents():
     assert direct.quote.debit < indirect.quote.debit
     assert direct.quote.debit % D("0.0001") == 0
     assert direct.quote.debit % D("0.01") != 0
-    assert direct.quote.debit <= D("5.00")
+    assert direct.quote.debit <= D("1.00")
 
 
 def test_official_fee_rounding_worked_example():
@@ -142,8 +142,8 @@ def test_same_official_example_with_documented_direct_member_paper_precision():
 def test_event_override_takes_precedence_and_zero_multiplier_is_not_missing():
     q = modeled(changes=({}, {"fee_multiplier_override": "0"}, {}))
     assert q.evidence["fee_multiplier"] == "0"
-    assert q.quantity == D("5.74")
-    assert q.quote.debit <= D("5")
+    assert q.quantity == D("1.14")
+    assert q.quote.debit <= D("1")
 
 
 @pytest.mark.parametrize("change", [
@@ -190,7 +190,7 @@ def test_real_public_event_metadata_omits_overrides_and_inherits_observed_series
         assert price == D(ask) and depth == D(expected_depth)
         for precision in ("0.01", "0.0001"):
             q = build_modeled_quote(price, depth, series, event, market, balance_precision=precision)
-            assert D("0") < q.quote.debit <= D("5.00")
+            assert D("0") < q.quote.debit <= D("1.00")
             assert q.principal + q.fees == q.quote.debit
             assert q.quantity <= depth and q.quantity % D("0.01") == 0
             assert q.quote.payout == q.quantity
@@ -249,17 +249,36 @@ def test_fee_waiver_expires_at_the_documented_time():
 
 
 def test_sizing_is_maximal_at_the_observed_price_within_budget_and_depth():
-    q = modeled(depth="3.451", precision="0.0001")
-    assert q.quantity == D("3.45")
-    assert q.quantity <= D("3.451")
-    assert q.quote.debit <= D("5")
+    q = modeled(depth="0.451", precision="0.0001")
+    assert q.quantity == D("0.45")
+    assert q.quantity <= D("0.451")
+    assert q.quote.debit <= D("1")
     full = modeled(precision="0.0001")
     _, _, next_debit = documented_taker_cost("0.87", full.quantity + D("0.01"), "1", "0.0001")
-    assert next_debit > D("5")
+    assert next_debit > D("1")
 
 
 @pytest.mark.parametrize("kwargs", [{"depth": "0.009"}, {"depth": "NaN"},
-                                    {"budget": "5.01"}, {"ask": "0"}, {"ask": "1"}])
+                                    {"budget": "1.01"}, {"budget": "5.00"}, {"ask": "0"}, {"ask": "1"}])
 def test_no_phantom_depth_or_overspend(kwargs):
     with pytest.raises(QuoteUnavailable):
         modeled(**kwargs)
+
+
+def test_legacy_capture_budget_requires_explicit_historical_request():
+    raw = synthetic_normalized_capture()
+    with pytest.raises(QuoteUnavailable, match="budget"):
+        build_quote(raw)
+    assert build_quote(raw, budget="5.00").quote.budget == D("5.00")
+
+
+@pytest.mark.parametrize("ask", [f"0.{value}" for value in range(80, 91)])
+@pytest.mark.parametrize("precision", ["0.0001", "0.01"])
+def test_one_dollar_sizing_caps_total_fees_and_uses_maximum_affordable_quantity(ask, precision):
+    detail = modeled(ask=ask, precision=precision)
+    assert detail.quote.budget == D("1.00")
+    assert detail.principal + detail.fees == detail.quote.debit <= D("1.00")
+    assert detail.quantity > 0 and detail.quantity % D("0.01") == 0
+    assert detail.quote.payout == detail.quantity
+    _, _, next_debit = documented_taker_cost(ask, detail.quantity + D("0.01"), "1", precision)
+    assert next_debit > D("1.00")

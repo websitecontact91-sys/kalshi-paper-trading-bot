@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from payout_quote import PayoutQuote, as_decimal, ask_in_band, payout_eligible
+from trade_config import TRADE_BUDGET
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,8 @@ def distance_pct(candidate):
 def rejection_reason(candidate):
     if not candidate.fresh:
         return "stale_or_closed"
+    if candidate.quote.budget > TRADE_BUDGET or candidate.quote.debit > TRADE_BUDGET:
+        return "trade_budget_exceeds_limit"
     if not ask_in_band(candidate.ask):
         return "ask_out_of_band"
     if not payout_eligible(candidate.quote):

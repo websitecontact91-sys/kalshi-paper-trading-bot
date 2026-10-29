@@ -192,13 +192,14 @@ def test_configured_api_mode_produces_eligible_quote_from_live_adapter(adapter):
     assert snapshot["quote_ready"] is True
     assert snapshot["quote_policy_mode"] == "documented_api"
     assert eligible(candidate)
-    assert details.quote.debit == D("4.9954")
-    assert details.quote.payout == D("5.69")
-    assert details.quote.unused_cash == D("0.0046")
+    assert details.quote.budget == D("1.00")
+    assert details.quote.debit == D("0.9921")
+    assert details.quote.payout == D("1.13")
+    assert details.quote.unused_cash == D("0.0079")
     assert details.quote.displayed_multiplier == D("1.14")
     assert details.source == "documented_fee_model"
     assert details.ui_parity_verified is False
-    assert details.principal + details.fees == details.quote.debit <= D("5.00")
+    assert details.principal + details.fees == details.quote.debit <= D("1.00")
 
 
 @pytest.mark.parametrize("summary_ask,book_ask,expected_reason", [
@@ -272,7 +273,7 @@ def test_captured_public_responses_use_book_prices_when_summaries_disagree(adapt
         details = snapshot["quotes"][side]
         assert details.principal == details.quantity * snapshot["asks"][side]
         assert details.quantity <= D(observed["depth"])
-        assert details.quote.debit <= D("5.00")
+        assert details.quote.debit <= D("1.00")
         assert side not in snapshot["rejections"]
 
 
@@ -309,7 +310,7 @@ def synthetic_identity_policy(tmp_path):
     payload = {**fields, "market_ticker": m["ticker"], "side": "YES"}
     raw = json.dumps({"synthetic_test_only": payload}, sort_keys=True)
     digest = hashlib.sha256(raw.encode()).hexdigest()
-    evidence = {"schema": NORMALIZED_SCHEMA, "budget": "5.00", **fields,
+    evidence = {"schema": NORMALIZED_SCHEMA, "budget": "1.00", **fields,
         "provenance": {"kind": "captured_kalshi_response", "adapter_verified": True,
             "adapter_id": "synthetic-policy-parser-test-only", "request_method": "GET",
             "source_url": "https://external-api.kalshi.com/", "captured_at": "2026-10-29T16:00:00Z",
