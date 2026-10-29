@@ -44,6 +44,19 @@ jobs:
         if: always()
         run: |
           if [ -f market-coverage.json ]; then cat market-coverage.json; fi
+      - name: Inspect official series settlement metadata
+        run: timeout 240s python -u settlement_source_audit.py > settlement-sources.json
+      - name: Show settlement metadata
+        if: always()
+        run: |
+          if [ -f settlement-sources.json ]; then cat settlement-sources.json; fi
+      - name: Retain settlement metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: settlement-sources
+          path: settlement-sources.json
+          if-no-files-found: ignore
       - name: Retain coverage inventory
         if: always()
         uses: actions/upload-artifact@v4
