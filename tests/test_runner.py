@@ -131,6 +131,125 @@ def test_coverage_and_round_reasons_are_durable(live_engine):
     assert row['close_time'] and row['rejections']
     assert load(path)['round_reports'][-1]['rounds'] == report['rounds']
 
+
+@pytest.mark.parametrize('transition', ['entry', 'win', 'loss', 'audit'])
+def test_source_update_handoff_retains_durable_transition_and_stops_io(live_engine, transition):
+    engine, client, _, path = live_engine
+    if transition in ('win', 'loss'):
+        engine.tick()
+        client.status, client.result = 'settled', 'yes' if transition == 'win' else 'no'
+    elif transition == 'audit':
+        client.quote_ready = False
+        engine.tick()
+    writes = []
+
+    def saved_before_handoff(state):
+        writes.append(copy.deepcopy(state))
+        return {**persist(state, path), 'remote': True, 'restart_required': True,
+                'remote_source_sha': 'new-tested-by-next-job', 'state_commit': 'durable-transition'}
+
+    engine.persist_state = saved_before_handoff
+    if transition == 'audit':
+        report = engine.finish()
+    else:
+        engine.tick()
+        report = engine.finish()
+    assert len(writes) == 1
+    assert load(path) == engine.state
+    assert report['completion_reason'] == 'source_update_handoff'
+    assert report['failure'] is None
+    assert report['source_update']['state_commit'] == 'durable-transition'
+    assert any(e['kind'] == 'SOURCE_UPDATE_HANDOFF' for e in engine.events)
+    if transition == 'entry':
+        assert engine.state['pending'] is not None
+        assert engine.state['balance'] == '995.00'
+        assert any(e['kind'] == 'PAPER_ENTRY' for e in engine.events)
+    elif transition in ('win', 'loss'):
+        assert engine.state['pending'] is None
+        assert len(engine.state['history']) == 1
+        assert engine.state['mode'] == ('SCANNING' if transition == 'win' else 'STOPPED')
+    else:
+        assert engine.state['pending'] is None and len(engine.state['round_reports']) == 1
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('A source handoff must not perform another scan or settlement')
+
+    client.discover = client.official_market = forbidden
+    assert engine.tick() == 'SOURCE_UPDATE_HANDOFF'
+    engine.finish()
+    assert len(writes) == 1
+
+
+def test_cli_source_handoff_exits_successfully_after_one_durable_entry(tmp_path, monkeypatch):
+    import live_client
+    import paper_runner
+    import time
+    clock = FakeClock(time.time())
+    client = FakeKalshiClient(clock, close=clock() + 30)
+    closed, writes = [], []
+    client.close = lambda: closed.append(True)
+    path = tmp_path / 'handoff.json'
+    save(path, new_state(session_id='handoff-cli'))
+
+    def durable(state, destination, **kwargs):
+        writes.append(copy.deepcopy(state))
+        return {**persist(state, destination), 'remote': True, 'restart_required': True,
+                'remote_source_sha': 'updated-source', 'state_commit': 'saved-paper-entry'}
+
+    monkeypatch.setenv('PAPER_SOURCE_SHA', 'tested-running-source')
+    monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    monkeypatch.setattr(live_client, 'LiveKalshiClient', lambda *a, **kw: client)
+    monkeypatch.setattr(paper_runner, 'persist', durable)
+    assert main(['--paper', '--persist-to-github', '--state', str(path),
+                 '--report-dir', str(tmp_path / 'reports'), '--duration', '600']) == 0
+    assert closed == [True] and len(writes) == client.discoveries == 1
+    assert load(path)['pending']['source_sha'] == 'tested-running-source'
+
+
+def test_cli_unconfirmed_persistence_still_fails(tmp_path, monkeypatch):
+    import live_client
+    import paper_runner
+    import time
+    clock = FakeClock(time.time())
+    client = FakeKalshiClient(clock, close=clock() + 30)
+    path = tmp_path / 'failed-save.json'
+    save(path, new_state(session_id='failure-cli'))
+
+    def failed(*args, **kwargs):
+        raise PersistenceError('Remote paper state was not saved after 4 attempts')
+
+    monkeypatch.setenv('PAPER_SOURCE_SHA', 'tested-running-source')
+    monkeypatch.setattr(live_client, 'LiveKalshiClient', lambda *a, **kw: client)
+    monkeypatch.setattr(paper_runner, 'persist', failed)
+    with pytest.raises(PersistenceError, match='not saved'):
+        main(['--paper', '--state', str(path), '--report-dir', str(tmp_path / 'reports')])
+    assert load(path)['pending'] is None
+
+
+def test_explicit_reset_handoff_exits_before_initializing_live_client(tmp_path, monkeypatch):
+    import live_client
+    import paper_runner
+    path = tmp_path / 'reset-handoff.json'
+    save(path, new_state(session_id='archived-on-explicit-request'))
+    before = path.read_bytes()
+
+    def durable(state, destination, **kwargs):
+        assert len(kwargs['extra_paths']) == 1
+        assert kwargs['extra_paths'][0].read_bytes() == before
+        return {**persist(state, destination), 'remote': True, 'restart_required': True,
+                'remote_source_sha': 'updated-source', 'state_commit': 'saved-explicit-reset'}
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('A reset handoff must exit before creating a live client')
+
+    monkeypatch.setenv('PAPER_SOURCE_SHA', 'tested-running-source')
+    monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    monkeypatch.setattr(live_client, 'LiveKalshiClient', forbidden)
+    monkeypatch.setattr(paper_runner, 'persist', durable)
+    assert main(['--paper', '--persist-to-github', '--new-session', '--confirm-reset',
+                 '--state', str(path), '--report-dir', str(tmp_path / 'reports')]) == 0
+    assert load(path)['session_id'] != 'archived-on-explicit-request'
+
 def test_cli_stopped_exits_without_live_client(tmp_path, monkeypatch):
     import live_client
     clock = FakeClock(); client = FakeKalshiClient(clock)

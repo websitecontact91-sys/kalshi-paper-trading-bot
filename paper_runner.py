@@ -54,6 +54,7 @@ class PaperEngine:
         self.first_scan, self.last_scan = None, None
         self.rounds, self.events = {}, []
         self._last_messages = {}
+        self.source_update = None
 
     def _emit(self, kind, **fields):
         event = {'kind': kind, 'timestamp': iso(self.clock()), 'source_sha': self.source, **fields}
@@ -68,6 +69,14 @@ class PaperEngine:
         self.state = updated
         self._emit(kind, **fields, balance=self.state['balance'], mode=self.state['mode'],
                    persistence=receipt)
+        if receipt and receipt.get('restart_required'):
+            self.source_update = {
+                'remote_source_sha': receipt['remote_source_sha'],
+                'state_commit': receipt['state_commit'],
+            }
+            self._emit('SOURCE_UPDATE_HANDOFF', **self.source_update,
+                       balance=self.state['balance'], mode=self.state['mode'],
+                       reason='State saved; the next workflow will test and run the updated code')
 
     def _round(self, key):
         return self.rounds.setdefault(key, {'round_key': key, 'final_window_scanned': False,
@@ -148,6 +157,8 @@ class PaperEngine:
             self._emit('SETTLEMENT_PENDING', ticker=pending['ticker'], status=status, result=result)
 
     def tick(self):
+        if self.source_update is not None:
+            return 'SOURCE_UPDATE_HANDOFF'
         if self.paper and self.state['mode'] == 'STOPPED':
             return 'STOPPED'
         now = self.clock()
@@ -260,10 +271,17 @@ class PaperEngine:
             'paper': self.paper, 'mode': self.state['mode'], 'failure': failure}
         if self.report_dir:
             (self.report_dir / 'coverage.json').write_text(json.dumps(coverage, indent=2, sort_keys=True) + '\n')
-        if self.paper and self.rounds and persist_audit:
+        if self.paper and self.rounds and persist_audit and self.source_update is None:
             updated = copy.deepcopy(self.state)
             updated.setdefault('round_reports', []).append(coverage)
             self._commit(updated, 'ROUND_AUDIT_SAVED', round_count=len(self.rounds))
+        if self.source_update is not None:
+            # The transition is already durable. Do not make a second write or
+            # load the changed source; preserve the handoff details as evidence.
+            coverage = {**coverage, 'completion_reason': 'source_update_handoff',
+                        'source_update': self.source_update}
+            if self.report_dir:
+                (self.report_dir / 'coverage.json').write_text(json.dumps(coverage, indent=2, sort_keys=True) + '\n')
         return coverage
 
 
@@ -299,7 +317,11 @@ def main(argv=None):
     def save(updated):
         return persist(updated, state_path, push=args.persist_to_github, source_sha=sha, extra_paths=archives)
     if args.new_session:
-        save(state)
+        receipt = save(state)
+        if receipt and receipt.get('restart_required'):
+            LOG.info('SOURCE_UPDATE_HANDOFF: requested reset saved in %s; next workflow will test updated code',
+                     receipt['state_commit'])
+            return 0
     from live_client import LiveKalshiClient
     client = LiveKalshiClient(args.quote_policy)
     engine = PaperEngine(client, state, persist_state=save, paper=args.paper, source=sha, report_dir=args.report_dir)
@@ -309,7 +331,8 @@ def main(argv=None):
     try:
         while time.monotonic() < deadline:
             cycle = time.monotonic()
-            if engine.tick() == 'STOPPED' and args.paper:
+            outcome = engine.tick()
+            if engine.source_update is not None or (outcome == 'STOPPED' and args.paper):
                 break
             remaining = deadline - time.monotonic()
             if remaining > 0:
