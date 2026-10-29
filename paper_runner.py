@@ -269,7 +269,9 @@ def settle(state, client):
         LOG.info('WAITING FOR OFFICIAL RESULT %s status=%s result=%r',
                  trade['ticker'], market.get('status'), result)
         return False
-    won = result == trade['side'].lower()\n    if won and trade.get('payout_source') and trade['payout_source'] != 'verified_display_payout_multiplier':\n        raise ValueError('Unverified paper payout source')
+    won = result == trade['side'].lower()
+    if won and trade.get('payout_source') and trade['payout_source'] != 'verified_display_payout_multiplier':
+        raise ValueError('Unverified paper payout source')
     payout = round(trade['cost'] * trade['gross_payout'], 8) if won and trade.get('payout_source') == 'verified_display_payout_multiplier' else (round(trade['count'], 8) if won and 'payout_source' not in trade else 0.0)
     trade.update(result=result, won=won,
                  pnl=round(payout - trade['cost'], 8), settled_at=time.time())
