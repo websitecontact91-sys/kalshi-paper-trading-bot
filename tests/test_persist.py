@@ -128,7 +128,7 @@ def test_remote_code_change_saves_entry_without_loading_or_overwriting_new_sourc
     assert git(remote, "diff", "--name-only", deployment, "main") == "paper_ledger.csv\npaper_state.json"
 
 
-def test_source_handoff_persists_loss_and_stop_without_reset(repository, tmp_path):
+def test_source_handoff_persists_loss_and_continuation_without_reset(repository, tmp_path):
     root, remote, source = repository
     persist(pending(root), root / "paper_state.json", push=True, source_sha=source)
     _, deployment = deploy_source(root, tmp_path)
@@ -138,7 +138,7 @@ def test_source_handoff_persists_loss_and_stop_without_reset(repository, tmp_pat
     saved = remote_state(remote)
     assert result["restart_required"] is True
     assert result["remote_source_sha"] == deployment
-    assert saved["mode"] == "STOPPED"
+    assert saved["mode"] == "SCANNING"
     assert saved["pending"] is None
     assert saved["balance"] == "999.00"
     assert len(saved["history"]) == 1

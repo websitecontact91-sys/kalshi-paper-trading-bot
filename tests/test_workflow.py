@@ -13,6 +13,7 @@ import yaml
 from scripts.schedule_evidence import evaluate_evidence, main as evidence_main, read_coverage
 from scripts.workflow_gate import (FINGERPRINT_PREFIX, code_fingerprint, inspect_state,
                                    main as gate_main)
+from state_store import new_state, record_entry, record_settlement
 
 ROOT = Path(__file__).resolve().parents[1]
 FINGERPRINT = FINGERPRINT_PREFIX + "c" * 64
@@ -164,20 +165,45 @@ def test_both_workflows_record_actual_checkout_and_preserve_evidence():
             assert expected in upload["with"]["path"]
 
 
-def saved_state(tmp_path, **updates):
-    data = {"mode": "SCANNING", "balance": "995.71", "history": [], "pending": None}
+def saved_state(tmp_path, *, state=None, **updates):
+    data = deepcopy(state) if state is not None else new_state("995.71")
+    if state is None and "balance" in updates:
+        data["initial_balance"] = updates["balance"]
     data.update(updates)
     path = tmp_path / "state.json"
     path.write_text(json.dumps(data))
     return path
 
 
-def test_gate_preserves_a_stopped_loss_and_never_writes_state(tmp_path):
-    path = saved_state(tmp_path, mode="STOPPED", balance="995.20", history=[{"won": False}])
+def pending_state(initial="1000.00"):
+    state = new_state(initial)
+    record_entry(state, "1992550", {"ticker": "KXSOL15M-TEST", "side": "NO",
+        "budget": "1.00", "debit": "1.00", "payout": "1.13"})
+    return state
+
+
+def test_gate_resumes_funded_legacy_loss_without_writing_or_resetting(tmp_path):
+    state = pending_state()
+    record_settlement(state, "yes")
+    state["mode"] = "STOPPED"
+    state.pop("stop_policy", None)
+    state.pop("stop_reason", None)
+    state["history"][-1]["state_after"] = "STOPPED"
+    path = saved_state(tmp_path, state=state)
     original = path.read_bytes()
     assert inspect_state(path) == {
-        "mode": "STOPPED", "stopped": True, "balance": "995.20", "history_count": 1}
+        "mode": "SCANNING", "stopped": False, "balance": "999.00", "history_count": 1,
+        "saved_mode": "STOPPED", "stop_reason": None, "policy_migrated": True}
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("balance,stopped", [("0.00", True), ("0.9999", True),
+                                            ("1.00", False), ("1.0001", False)])
+def test_gate_uses_strict_one_dollar_balance_boundary(tmp_path, balance, stopped):
+    state = new_state(balance)
+    report = inspect_state(saved_state(tmp_path, state=state))
+    assert report["stopped"] is stopped
+    assert report["stop_reason"] == ("insufficient_funds" if stopped else None)
 
 
 @pytest.mark.parametrize("updates", [
@@ -187,18 +213,23 @@ def test_gate_preserves_a_stopped_loss_and_never_writes_state(tmp_path):
     {"balance": "NaN"}, {"balance": "Infinity"}, {"balance": "-0.01"},
     {"balance": True}, {"history": {}}, {"history": [None]}, {"mode": "unknown"},
 ])
-def test_gate_rejects_corrupt_or_reset_loss_state(tmp_path, updates):
+def test_gate_rejects_corrupt_accounting_or_position_state(tmp_path, updates):
     with pytest.raises(ValueError):
         inspect_state(saved_state(tmp_path, **updates))
 
 
 def test_gate_accepts_current_or_legacy_pending_and_rejects_conflicts(tmp_path):
-    path = saved_state(tmp_path, mode="WAITING_FOR_SETTLEMENT", trade={"ticker": "OLD"})
+    current = pending_state("1.00")
+    assert current["balance"] == "0.00"
+    legacy = {"version": 1, "mode": "WAITING_FOR_SETTLEMENT", "balance": 0,
+              "history": [], "trade": deepcopy(current["pending"])}
+    path = saved_state(tmp_path, state=legacy)
     assert inspect_state(path)["mode"] == "WAITING_FOR_SETTLEMENT"
-    path = saved_state(tmp_path, mode="WAITING_FOR_SETTLEMENT", pending={"ticker": "NEW"})
-    assert inspect_state(path)["mode"] == "WAITING_FOR_SETTLEMENT"
-    path = saved_state(tmp_path, mode="WAITING_FOR_SETTLEMENT",
-                       pending={"ticker": "NEW"}, trade={"ticker": "OLD"})
+    path = saved_state(tmp_path, state=current)
+    report = inspect_state(path)
+    assert report["mode"] == "WAITING_FOR_SETTLEMENT" and report["stopped"] is False
+    conflicting = {**current["pending"], "ticker": "OTHER"}
+    path = saved_state(tmp_path, state=current, trade=conflicting)
     with pytest.raises(ValueError, match="Conflicting"):
         inspect_state(path)
 
@@ -209,8 +240,24 @@ def test_gate_missing_state_never_creates_a_session(tmp_path):
     assert not path.exists()
 
 
+@pytest.mark.parametrize("current_schema", [True, False])
+def test_gate_cannot_discard_a_position_saved_under_the_wrong_alias(tmp_path, current_schema):
+    position = pending_state()["pending"]
+    if current_schema:
+        state = new_state()
+        state["trade"] = position
+    else:
+        state = {"version": 1, "mode": "SCANNING", "balance": 1000,
+                 "history": [], "trade": None, "pending": position}
+    path = saved_state(tmp_path, state=state)
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="Conflicting"):
+        inspect_state(path)
+    assert path.read_bytes() == before
+
+
 def test_gate_outputs_actual_sha_and_stop_without_loading_network_dependencies(tmp_path, monkeypatch):
-    path = saved_state(tmp_path, mode="STOPPED", history=[{"won": False}])
+    path = saved_state(tmp_path, state=new_state("0.9999"))
     output, metadata = tmp_path / "output", tmp_path / "metadata.json"
     monkeypatch.setattr("scripts.workflow_gate.source_metadata",
                         lambda: {"source_sha": "a" * 40, "event_sha": "b" * 40,
@@ -221,6 +268,15 @@ def test_gate_outputs_actual_sha_and_stop_without_loading_network_dependencies(t
     assert "source_sha=" + "a" * 40 in output.read_text()
     assert "code_fingerprint=" + FINGERPRINT in output.read_text()
     assert json.loads(metadata.read_text())["source_sha"] != "b" * 40
+
+
+def test_standalone_gate_runs_before_dependency_installation(tmp_path):
+    path = saved_state(tmp_path, state=new_state("1.00"))
+    completed = subprocess.run([sys.executable, "-S", str(ROOT / "scripts/workflow_gate.py"),
+                                "--state", str(path)], cwd=tmp_path,
+                               text=True, capture_output=True, timeout=5)
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["stopped"] is False
 
 
 def test_code_fingerprint_survives_state_commits_but_detects_source_and_policy_changes(tmp_path):

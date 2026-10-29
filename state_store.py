@@ -21,6 +21,7 @@ from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from trade_config import TRADE_BUDGET
 
 SCHEMA = 1
+STOP_POLICY = "insufficient_funds_v1"
 # Historical validation includes trades created before the $1 rule. New entries
 # are checked separately, so reducing the cap never invalidates a saved trade.
 HISTORICAL_MAX_BUDGET = Decimal("5.00")
@@ -105,10 +106,41 @@ def new_state(initial_balance="1000.00", *, session_id=None):
     balance = _decimal(initial_balance, "initial balance")
     if balance < 0:
         raise StateError("Negative initial balance")
-    return {"schema": SCHEMA, "session_id": session_id or uuid.uuid4().hex,
+    state = {"schema": SCHEMA, "session_id": session_id or uuid.uuid4().hex,
             "mode": "SCANNING", "initial_balance": _s(balance),
             "balance": _s(balance), "pending": None, "rounds_traded": [],
             "history": []}
+    _set_balance_policy(state)
+    return state
+
+
+def _set_balance_policy(state):
+    """Apply the current cash rule after a checked accounting transition."""
+    state["stop_policy"] = STOP_POLICY
+    # Committed cash may be below the entry threshold. Always finish observing
+    # that existing position before deciding whether another trade is funded.
+    state["mode"] = ("WAITING_FOR_SETTLEMENT" if state["pending"] is not None else
+                     "STOPPED" if _decimal(state["balance"], "balance") < TRADE_BUDGET else
+                     "SCANNING")
+    state["stop_reason"] = "insufficient_funds" if state["mode"] == "STOPPED" else None
+
+
+def apply_balance_policy(state):
+    """Resume a funded legacy loss stop without resetting or rewriting history.
+
+    This returns a copy. Callers must persist the returned state before acting
+    on a migration. Unknown policy/reason values and financial corruption still
+    fail validation; a migration is never a repair for an invalid ledger.
+    """
+    validate(state)
+    updated = copy.deepcopy(state)
+    # A redundant legacy alias is accepted only when it matches the current
+    # authoritative position (checked above). Drop it so later transitions
+    # cannot leave a stale second copy of the position behind.
+    updated.pop("trade", None)
+    _set_balance_policy(updated)
+    validate(updated)
+    return updated
 
 
 def _trade(raw, *, legacy=False, round_key=None):
@@ -166,11 +198,11 @@ def migrate(raw):
         raise StateError("State must be an object")
     _finite_tree(raw)
     if raw.get("schema") == SCHEMA:
-        result = copy.deepcopy(raw)
-        validate(result)
-        return result
+        return apply_balance_policy(raw)
     if "schema" in raw or raw.get("version", 1) != 1:
         raise StateError("Unsupported state schema")
+    if raw.get("pending") is not None and raw.get("pending") != raw.get("trade"):
+        raise StateError("Legacy pending alias disagrees with authoritative trade")
     if not isinstance(raw.get("history"), list):
         raise StateError("Missing legacy history")
     history = [_trade(t, legacy=True) for t in raw["history"]]
@@ -201,13 +233,14 @@ def migrate(raw):
              "rounds_traded": [t["round_key"] for t in history] + ([pending["round_key"]] if pending else [])}
     for trade in history + ([pending] if pending else []):
         trade.setdefault("event_id", f"{state['session_id']}:{trade['round_key']}")
-    validate(state)
-    return state
+    return apply_balance_policy(state)
 
 
 def validate(state):
     if not isinstance(state, dict) or state.get("schema") != SCHEMA:
         raise StateError("Unsupported state schema")
+    if state.get("trade") is not None and state.get("trade") != state.get("pending"):
+        raise StateError("Legacy trade alias disagrees with authoritative pending position")
     _finite_tree(state)
     if state.get("mode") not in MODES or not isinstance(state.get("session_id"), str) or not state["session_id"]:
         raise StateError("Invalid state mode or session identity")
@@ -224,12 +257,21 @@ def validate(state):
     pending = state.get("pending")
     if (state["mode"] == "WAITING_FOR_SETTLEMENT") != (pending is not None):
         raise StateError("Pending trade and state mode disagree")
+    policy, reason = state.get("stop_policy"), state.get("stop_reason")
+    if policy not in (None, STOP_POLICY):
+        raise StateError("Unknown paper stopping policy")
+    if reason not in (None, "insufficient_funds") or (policy is None and reason is not None):
+        raise StateError("Unknown paper stop reason")
+    if policy == STOP_POLICY:
+        expected = ("WAITING_FOR_SETTLEMENT" if pending is not None else
+                    "STOPPED" if balance < TRADE_BUDGET else "SCANNING")
+        if state["mode"] != expected:
+            raise StateError("Paper mode disagrees with available funds")
+        if reason != ("insufficient_funds" if expected == "STOPPED" else None):
+            raise StateError("Paper stop reason disagrees with available funds")
     seen, events = [], set()
-    loss_seen = False
     calculated = initial
     for trade in history:
-        if loss_seen:
-            raise StateError("History contains a trade after the permanent loss stop")
         normalized = _trade(trade)
         if any(not isinstance(trade.get(key), str) for key in ("budget", "debit", "payout", "fees")):
             raise StateError("Trade money must be decimal strings")
@@ -244,9 +286,6 @@ def validate(state):
         won = None if result == "VOID" else normalized["side"] == result
         if trade.get("won") is not won:
             raise StateError("Result and won flag disagree")
-        if won is False and state["mode"] != "STOPPED":
-            raise StateError("A losing session must remain STOPPED")
-        loss_seen = won is False
         debit = _decimal(trade["debit"], "debit")
         credit = debit if result == "VOID" else (_decimal(trade["payout"], "payout") if won else Decimal(0))
         if _decimal(trade.get("pnl"), "pnl") != credit - debit or _decimal(trade.get("cash_payout"), "cash payout") != credit:
@@ -314,7 +353,9 @@ def save(path, state):
 def can_enter(state, round_key):
     validate(state)
     key = canonical_round_key(round_key)
-    return state["mode"] == "SCANNING" and state["pending"] is None and key not in state["rounds_traded"]
+    return (state["mode"] == "SCANNING" and state["pending"] is None
+            and _decimal(state["balance"], "balance") >= TRADE_BUDGET
+            and key not in state["rounds_traded"])
 
 
 def record_entry(state, round_key, trade):
@@ -333,7 +374,7 @@ def record_entry(state, round_key, trade):
     updated["pending"] = pending
     updated["rounds_traded"].append(key)
     updated["balance"] = _s(_decimal(state["balance"], "balance") - _decimal(pending["debit"], "debit"))
-    updated["mode"] = "WAITING_FOR_SETTLEMENT"
+    _set_balance_policy(updated)
     validate(updated)
     state.clear()
     state.update(updated)
@@ -350,12 +391,12 @@ def _settle(state, result, *, settled_at=None):
     debit = _decimal(trade["debit"], "debit")
     credit = debit if result == "VOID" else (_decimal(trade["payout"], "payout") if won else Decimal(0))
     updated["balance"] = _s(_decimal(updated["balance"], "balance") + credit)
-    updated["mode"] = "STOPPED" if won is False else "SCANNING"
+    updated["pending"] = None
+    _set_balance_policy(updated)
     trade.update(result=result, won=won, pnl=_s(credit - debit), cash_payout=_s(credit),
                  settled_at=time.time() if settled_at is None else settled_at,
                  balance_after=updated["balance"], state_after=updated["mode"])
     updated["history"].append(trade)
-    updated["pending"] = None
     validate(updated)
     state.clear()
     state.update(updated)

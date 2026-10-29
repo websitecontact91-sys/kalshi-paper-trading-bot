@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import os
@@ -11,7 +10,13 @@ from pathlib import Path
 import subprocess
 import sys
 
-MODES = {"SCANNING", "WAITING_FOR_SETTLEMENT", "STOPPED"}
+# This script runs before dependency installation; state_store and trade_config
+# use only the standard library. Use the same validated policy as the runner.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+from state_store import SCHEMA, migrate
+
 FINGERPRINT_PREFIX = "git-tree-state-excluded-v1:sha256:"
 
 
@@ -49,37 +54,25 @@ def inspect_state(path: str | Path) -> dict:
     if not path.is_file():
         raise ValueError("Missing persistent state; refusing to invent a new session")
     try:
-        state = json.loads(path.read_text(encoding="utf-8"), parse_float=Decimal)
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError("Unreadable persistent state; refusing to reset") from exc
-    if not isinstance(state, dict) or state.get("mode") not in MODES:
-        raise ValueError("Invalid persistent state mode")
-    history = state.get("history")
-    if not isinstance(history, list) or any(not isinstance(t, dict) for t in history):
-        raise ValueError("Invalid persisted trade history")
-    if isinstance(state.get("balance"), bool):
-        raise ValueError("Invalid persisted balance")
-    try:
-        balance = Decimal(str(state["balance"]))
-    except (KeyError, ValueError, InvalidOperation) as exc:
-        raise ValueError("Invalid persisted balance") from exc
-    if not balance.is_finite() or balance < 0:
-        raise ValueError("Invalid persisted balance")
-    if state["mode"] != "STOPPED" and any(t.get("won") is False for t in history):
-        raise ValueError("Saved loss requires STOPPED; refusing an automatic restart")
-    pending = state.get("pending")
-    legacy_pending = state.get("trade")
-    if pending is not None and legacy_pending is not None and pending != legacy_pending:
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid persistent state")
+    pending = raw.get("pending")
+    legacy_pending = raw.get("trade")
+    current_schema = raw.get("schema") == SCHEMA
+    if ((current_schema and legacy_pending is not None and legacy_pending != pending)
+            or (not current_schema and pending is not None and pending != legacy_pending)):
         raise ValueError("Conflicting current and legacy pending positions")
-    pending = pending if pending is not None else legacy_pending
-    if pending is not None and not isinstance(pending, dict):
-        raise ValueError("Invalid pending position")
-    if state["mode"] == "WAITING_FOR_SETTLEMENT" and not pending:
-        raise ValueError("Waiting state has no pending position")
-    if state["mode"] != "WAITING_FOR_SETTLEMENT" and pending is not None:
-        raise ValueError("Pending position conflicts with saved mode")
+    # Migration is read-only here. The runner saves an authorized policy
+    # migration durably before it scans or records another paper entry.
+    state = migrate(raw)
     return {"mode": state["mode"], "stopped": state["mode"] == "STOPPED",
-            "balance": str(balance), "history_count": len(history)}
+            "balance": state["balance"], "history_count": len(state["history"]),
+            "saved_mode": raw.get("mode"), "stop_reason": state.get("stop_reason"),
+            "policy_migrated": raw.get("stop_policy") != state.get("stop_policy")
+                or raw.get("mode") != state["mode"]}
 
 
 def source_metadata() -> dict:
@@ -118,7 +111,7 @@ def main(argv=None) -> int:
                     out.write("mode=" + state["mode"] + "\n")
         print(json.dumps({**metadata, **state}, sort_keys=True))
         if state.get("stopped"):
-            print("STOPPED: retaining the saved ledger; no automatic reset or successor is permitted.")
+            print("STOPPED: available paper cash is below $1.00; retaining the saved ledger and skipping scanning/successor dispatch.")
         return 0
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         print("Workflow gate refused startup: " + str(exc), file=sys.stderr)

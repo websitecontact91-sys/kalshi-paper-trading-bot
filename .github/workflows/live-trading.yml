@@ -81,7 +81,7 @@ jobs:
           python -m compileall -q .
           python -m pytest -q
           python scripts/audit_paper_boundary.py
-      - name: Inspect the durable live session before scheduling another run
+      - name: Recheck available cash and durable live state before scheduling another run
         if: steps.activation.outputs.allowed == 'true' && steps.activation.outputs.mode == 'run'
         id: state
         env:

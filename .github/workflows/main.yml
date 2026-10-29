@@ -42,9 +42,9 @@ jobs:
           --github-output "$GITHUB_OUTPUT"
           --metadata runtime_reports/workflow_provenance.json
 
-      - name: Explain persistent stop
+      - name: Explain insufficient-funds stop
         if: steps.gate.outputs.stopped == 'true'
-        run: echo 'STOPPED after the saved session loss. No reset, no scanning, and no successor dispatch. Cron remains enabled.'
+        run: echo 'STOPPED because available simulated cash is below $1.00. History is retained; no scanning or successor is dispatched. Cron remains enabled.'
 
       - name: Install Python
         if: steps.gate.outputs.stopped != 'true'

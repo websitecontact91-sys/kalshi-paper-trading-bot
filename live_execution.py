@@ -12,11 +12,13 @@ import time
 import uuid
 
 from live_broker import BrokerError, OrderRejected, TradingDisabled, worst_case_debit
-from live_state import LiveStateError, execution_breaches, money, validate
+from live_state import LiveStateError, execution_breaches, money, validate, apply_balance, FUNDS_POLICY
 from payout_quote import PayoutQuote, ask_in_band, payout_eligible, as_decimal
 from quote_adapter import documented_taker_cost
 from timing import MAX_FUTURE_S, in_entry_window, observation_fresh, round_key, timestamp
 from trade_config import TRADE_BUDGET
+
+FUNDS_CHECK_INTERVAL_SECONDS = 5
 
 
 class LiveExecutionError(RuntimeError):
@@ -236,6 +238,9 @@ class LiveExecution:
         self.require_remote_durability = require_remote_durability
         self.source_update = None
         self.last_event = None
+        # Never trust a saved account snapshot as fresh after a process restart.
+        self._last_funds_check = None
+        self._funds_check_ok = False
 
     def _event(self, kind, **fields):
         self.last_event = {"kind": kind, "at": iso(self.clock()), **fields}
@@ -256,12 +261,70 @@ class LiveExecution:
 
     def _halt(self, reason, pending=None):
         updated = copy.deepcopy(self.state)
-        updated.update(mode="HALTED", halt_reason=reason)
+        updated.update(mode="HALTED", halt_reason=reason, stop_reason=None)
         if pending is not None:
             updated["pending"] = pending
         if updated != self.state:
             self._commit(updated, "LIVE_HALTED")
         return self.state["mode"]
+
+    def check_funds(self, *, force=False):
+        """Check available cash before scanning, including when no quote exists.
+
+        The short cache is process-local only. Every submission forces a new
+        read, and pending orders bypass this gate so settlement is never lost.
+        A failed read blocks this scan without turning a transient outage into
+        a permanent execution-integrity halt.
+        """
+        if self.source_update is not None:
+            return "SOURCE_UPDATE_HANDOFF"
+        if self.state.get("pending") is not None:
+            return self.state["mode"]
+        if self.state.get("halt_reason") or any(execution_breaches(item) for item in self.state["history"] + self.state["attempts"]):
+            return self._halt(self.state.get("halt_reason") or "historical_execution_breach")
+        validate(self.state)
+        now = self.clock()
+        if (not force and self._funds_check_ok and self._last_funds_check is not None
+                and 0 <= now - self._last_funds_check < FUNDS_CHECK_INTERVAL_SECONDS):
+            return self.state["mode"]
+        try:
+            balance = self.broker.balance()
+            cash = money(balance["available_balance_usd"], "available account cash", nonnegative=True)
+        except Exception as exc:
+            self._funds_check_ok = False
+            self._event("LIVE_BALANCE_UNAVAILABLE", reason=type(exc).__name__)
+            return "BLOCKED_BALANCE_UNAVAILABLE"
+        checked_at = self.clock()
+        updated = apply_balance(self.state, cash, iso(checked_at))
+        transition = any(updated.get(key) != self.state.get(key)
+                         for key in ("mode", "funds_policy", "stop_reason", "halt_reason"))
+        if transition:
+            self._commit(updated, "LIVE_INSUFFICIENT_FUNDS" if updated["mode"] == "STOPPED" else "LIVE_FUNDS_READY")
+        else:
+            # Observational fields are kept in memory until the next durable
+            # order/settlement transition; polling does not create Git commits.
+            self.state = updated
+        self._last_funds_check, self._funds_check_ok = checked_at, True
+        return "SOURCE_UPDATE_HANDOFF" if self.source_update is not None else self.state["mode"]
+
+    def _terminal_balance(self, updated):
+        """Choose the post-order mode using a fresh balance, never realized P/L."""
+        updated.update(mode="HALTED" if updated.get("halt_reason") else "SCANNING",
+                       account_cash=None, account_cash_checked_at=None,
+                       funds_policy=FUNDS_POLICY, stop_reason=None)
+        self._funds_check_ok = False
+        try:
+            balance = self.broker.balance()
+            cash = money(balance["available_balance_usd"], "available account cash", nonnegative=True)
+        except Exception as exc:
+            # The official settlement remains durable. The next scan must get
+            # a fresh balance successfully before it may inspect candidates.
+            self._event("LIVE_BALANCE_UNAVAILABLE", reason=type(exc).__name__)
+            return updated
+        checked_at = self.clock()
+        updated = apply_balance(updated, cash, iso(checked_at))
+        self._last_funds_check, self._funds_check_ok = checked_at, True
+        return updated
 
     def _validate_candidate(self, candidate):
         try:
@@ -303,7 +366,7 @@ class LiveExecution:
             return "SOURCE_UPDATE_HANDOFF"
         if self.state["pending"] is not None:
             return self.reconcile()
-        if self.state["mode"] in {"STOPPED", "HALTED"}:
+        if self.state["mode"] == "HALTED":
             return self.state["mode"]
         if self.state.get("halt_reason") or any(execution_breaches(item) for item in self.state["history"]):
             return self._halt(self.state.get("halt_reason") or "historical_execution_breach")
@@ -320,10 +383,14 @@ class LiveExecution:
             shards = status.get("exchange_index_statuses", [])
             if not isinstance(shards, list) or any(x.get("exchange_active") is not True or x.get("trading_active") is not True for x in shards):
                 return "BLOCKED_EXCHANGE_INACTIVE"
-            balance = self.broker.balance()
-            cash = money(balance["available_balance_usd"], "available account cash", nonnegative=True)
-            if cash < as_decimal(c["worst_case_debit"]):
-                return "BLOCKED_INSUFFICIENT_CASH"
+        except Exception as exc:
+            self._event("LIVE_PREFLIGHT_UNAVAILABLE", reason=type(exc).__name__)
+            return "BLOCKED_ACCOUNT_PREFLIGHT"
+        funds = self.check_funds(force=True)
+        if funds != "SCANNING":
+            return funds
+        cash = money(self.state["account_cash"], "available account cash", nonnegative=True)
+        try:
             if self.broker.positions(c["ticker"]) or self.broker.orders(c["ticker"]):
                 return "BLOCKED_EXISTING_EXPOSURE"
         except Exception as exc:
@@ -342,7 +409,7 @@ class LiveExecution:
         pending["client_order_id"] = str(uuid.uuid5(uuid.NAMESPACE_URL,
             self.state["account_scope"] + ":" + self.state["session_id"] + ":" + c["round_key"]))
         updated = copy.deepcopy(self.state)
-        updated.update(mode="RECONCILING", pending=pending, account_cash=str(cash), account_cash_checked_at=iso(self.clock()))
+        updated.update(mode="RECONCILING", pending=pending, account_cash=str(cash), stop_reason=None)
         updated["attempted_rounds"].append(c["round_key"])
         self._commit(updated, "LIVE_INTENT_DURABLE")
         if self.source_update is not None:
@@ -379,7 +446,8 @@ class LiveExecution:
             raise LiveExecutionError("Cannot discard an observed live fill")
         attempt.update(outcome=outcome, reason=reason, finished_at=iso(self.clock()))
         updated["attempts"].append(attempt)
-        updated.update(pending=None, mode="HALTED" if updated.get("halt_reason") else "SCANNING")
+        updated["pending"] = None
+        updated = self._terminal_balance(updated)
         self._commit(updated, "LIVE_UNFILLED")
         return self.state["mode"]
 
@@ -387,7 +455,7 @@ class LiveExecution:
         if self.source_update is not None:
             return "SOURCE_UPDATE_HANDOFF"
         if self.state["pending"] is None:
-            return self.state["mode"]
+            return self.check_funds(force=True)
         pending = copy.deepcopy(self.state["pending"])
         try:
             order = (self.broker.get_order(pending["order_id"]) if pending.get("order_id")
@@ -452,19 +520,12 @@ class LiveExecution:
         trade.update(result, stage="SETTLED")
         updated["history"].append(trade)
         updated["realized_pnl"] = str(as_decimal(updated["realized_pnl"]) + as_decimal(result["pnl"]))
-        stopped = result["won"] is False or as_decimal(result["pnl"]) < 0
-        updated.update(pending=None, mode="STOPPED" if stopped else "HALTED" if updated.get("halt_reason") else "SCANNING")
-        try:
-            balance = self.broker.balance()
-            updated["account_cash"] = str(money(balance["available_balance_usd"], nonnegative=True))
-            updated["account_cash_checked_at"] = iso(self.clock())
-        except Exception:
-            # Verified settlement survives an unrelated account-snapshot outage.
-            pass
+        updated["pending"] = None
+        updated = self._terminal_balance(updated)
         self._commit(updated, "LIVE_SETTLED")
         return self.state["mode"]
 
     def tick(self, candidate=None):
         if self.state["pending"] is not None:
             return self.reconcile()
-        return self.submit(candidate) if candidate is not None else self.state["mode"]
+        return self.submit(candidate) if candidate is not None else self.check_funds()

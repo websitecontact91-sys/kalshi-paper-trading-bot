@@ -20,7 +20,7 @@ import requests
 from live_broker import LiveBroker, BrokerError, max_affordable_quantity, worst_case_debit
 from live_execution import LiveExecution, CandidateInvalid
 from live_persistence import LiveStore
-from live_state import new_state
+from live_state import new_state, apply_balance
 from payout_quote import PayoutQuote, as_decimal
 from quote_adapter import documented_taker_cost
 from selection import Candidate, distance_pct, rank, rejection_reason
@@ -169,6 +169,8 @@ def preflight(broker, config):
     return {'mode': 'READ_ONLY_PREFLIGHT', 'account_reads_verified': True,
         'real_order_execution_tested': False, 'live_enabled': config.enabled,
         'writes_enabled': False, 'max_total_cost_usd': str(TRADE_BUDGET),
+        'minimum_available_cash_usd': str(TRADE_BUDGET),
+        'sufficient_funds_for_new_trade': as_decimal(account['available_balance_usd']) >= TRADE_BUDGET,
         'balance_precision_for_cost_bound': config.balance_precision,
         'account': account, 'exchange': exchange,
         'existing_resting_order_count': len(resting), 'existing_unsettled_position_rows': len(positions),
@@ -214,8 +216,8 @@ def main(argv=None):
         with store.locked():
             if args.initialize_state:
                 account = broker.balance()
-                state = new_state(account_scope=broker.account_scope)
-                state['account_cash'] = account['available_balance_usd']
+                state = apply_balance(new_state(account_scope=broker.account_scope),
+                    account['available_balance_usd'], datetime.now(timezone.utc).isoformat())
                 receipt = store.initialize(state)
                 print(json.dumps({'live_state_initialized': True, 'writes_enabled': False,
                                   'account': account, 'persistence': receipt}, sort_keys=True))
@@ -224,9 +226,18 @@ def main(argv=None):
             if args.inspect_state:
                 if state['account_scope'] != broker.account_scope:
                     raise ValueError('Live journal belongs to a different account/key scope')
-                can_run = state['mode'] not in {'STOPPED', 'HALTED'} or state.get('pending') is not None
+                # Account GETs refresh funds-stopped and legacy loss-stopped
+                # journals. Existing exposure always remains reconcilable.
+                inspector = LiveExecution(broker, state, persist_state=store.persist,
+                    official_market=lambda ticker: None,
+                    require_remote_durability=args.persist_to_github)
+                funds = inspector.check_funds(force=True)
+                state = inspector.state
+                can_run = state.get('pending') is not None or funds == 'SCANNING'
                 report = {'mode': state['mode'], 'can_run': can_run, 'writes_enabled': False,
-                          'pending': state.get('pending') is not None}
+                          'pending': state.get('pending') is not None,
+                          'stop_reason': state.get('stop_reason'), 'funds_check': funds,
+                          'account_cash': state.get('account_cash')}
                 if os.environ.get('GITHUB_OUTPUT'):
                     with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
                         output.write('can_run=' + str(can_run).lower() + '\n')
@@ -250,7 +261,7 @@ def main(argv=None):
                     cycle = time.monotonic()
                     if engine.state.get('pending') is not None:
                         engine.tick()
-                    elif engine.state['mode'] == 'SCANNING':
+                    elif engine.check_funds() == 'SCANNING' and not client.readiness_reasons:
                         try:
                             for candidate in provider.candidates(engine.state['attempted_rounds']):
                                 try:
@@ -258,7 +269,8 @@ def main(argv=None):
                                 except CandidateInvalid:
                                     LOG.info('Candidate expired, became stale, or no longer met the strategy rules')
                                     continue
-                                if engine.state.get('pending') is not None or engine.state['mode'] != 'SCANNING':
+                                if (engine.source_update or engine.state.get('pending') is not None
+                                        or engine.state['mode'] != 'SCANNING'):
                                     break
                         except (BrokerError, requests.RequestException, TimeoutError) as exc:
                             LOG.warning('Scan skipped after a temporary data-read failure: %s', type(exc).__name__)
@@ -272,7 +284,9 @@ def main(argv=None):
             report = {'mode': engine.state['mode'], 'account_scope': engine.state['account_scope'],
                 'realized_pnl': engine.state['realized_pnl'], 'completed': len(engine.state['history']),
                 'pending': engine.state.get('pending') is not None,
-                'halt_reason': engine.state.get('halt_reason'), 'source_update': engine.source_update}
+                'halt_reason': engine.state.get('halt_reason'), 'source_update': engine.source_update,
+                'stop_reason': engine.state.get('stop_reason'),
+                'account_cash': engine.state.get('account_cash')}
             (report_dir / 'execution-summary.json').write_text(json.dumps(report, indent=2) + '\n')
             print(json.dumps(report, sort_keys=True))
             return 0

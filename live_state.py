@@ -19,6 +19,7 @@ from timing import MAX_FUTURE_S, in_entry_window, observation_fresh, round_key, 
 from trade_config import TRADE_BUDGET
 
 SCHEMA = "kalshi-live.v1"
+FUNDS_POLICY = "continue_until_insufficient_funds.v1"
 MODES = {"SCANNING", "RECONCILING", "WAITING_FOR_SETTLEMENT", "HALTED", "STOPPED"}
 
 
@@ -53,7 +54,8 @@ def new_state(session_id=None, *, account_scope):
     state = {"schema": SCHEMA, "session_id": session_id or str(uuid.uuid4()),
              "account_scope": account_scope, "mode": "SCANNING", "account_cash": None,
              "account_cash_checked_at": None, "realized_pnl": "0.00", "history": [],
-             "attempts": [], "attempted_rounds": [], "pending": None, "halt_reason": None}
+             "attempts": [], "attempted_rounds": [], "pending": None, "halt_reason": None,
+             "funds_policy": FUNDS_POLICY, "stop_reason": None}
     return validate(state)
 
 
@@ -187,6 +189,24 @@ def validate(state):
         if not isinstance(state["account_cash"], str):
             raise LiveStateError("Account cash must be a decimal string")
         money(state["account_cash"], "account cash", nonnegative=True)
+    policy = state.get("funds_policy")
+    if policy not in {None, FUNDS_POLICY}:
+        raise LiveStateError("Unsupported live funds policy")
+    if state.get("stop_reason") not in {None, "insufficient_funds"}:
+        raise LiveStateError("Invalid live stop reason")
+    if state.get("account_cash_checked_at") is not None:
+        timestamp(state["account_cash_checked_at"])
+    if policy == FUNDS_POLICY:
+        if mode == "STOPPED":
+            if (state.get("stop_reason") != "insufficient_funds"
+                    or state.get("account_cash") is None
+                    or state.get("account_cash_checked_at") is None
+                    or money(state["account_cash"]) >= TRADE_BUDGET):
+                raise LiveStateError("A funds stop requires confirmed cash below the trade budget")
+        elif state.get("stop_reason") is not None:
+            raise LiveStateError("Only a stopped journal can carry a funds-stop reason")
+        if mode == "SCANNING" and state.get("account_cash") is not None and money(state["account_cash"]) < TRADE_BUDGET:
+            raise LiveStateError("Insufficient available cash cannot be scanning")
     if not isinstance(state.get("realized_pnl"), str):
         raise LiveStateError("Realized P/L must be a decimal string")
     recorded_pnl = money(state["realized_pnl"], "realized P/L")
@@ -221,10 +241,8 @@ def validate(state):
             raise LiveStateError("Invalid unfilled attempt outcome")
         if attempt.get("execution"):
             raise LiveStateError("An unfilled attempt cannot contain a fill")
-    total, loss_seen = Decimal("0"), False
+    total = Decimal("0")
     for trade in history:
-        if loss_seen:
-            raise LiveStateError("Trade history continues after a permanent loss stop")
         actual = _execution(trade.get("execution"))
         result = trade.get("result")
         if result not in {"YES", "NO", "VOID"}:
@@ -239,11 +257,8 @@ def validate(state):
         if timestamp(trade.get("settled_at")) < timestamp(trade["execution"]["last_filled_at"]):
             raise LiveStateError("Settlement precedes the last attributed fill")
         total += revenue - actual["debit"]
-        loss_seen = won is False or revenue < actual["debit"]
     if total != recorded_pnl:
         raise LiveStateError("Live realized P/L does not reconcile")
-    if loss_seen and mode != "STOPPED":
-        raise LiveStateError("A settled loss must remain stopped")
     if pending:
         for field in ("budget", "quoted_debit", "quantity", "ask", "fee_multiplier", "balance_precision"):
             if not isinstance(pending.get(field), str):
@@ -256,6 +271,29 @@ def validate(state):
         if mode == "WAITING_FOR_SETTLEMENT" and pending.get("execution") is None:
             raise LiveStateError("Settlement waiting requires verified fills")
     return state
+
+
+def apply_balance(state, cash, checked_at):
+    """Apply a fresh API cash observation without deriving money from bot P/L.
+
+    This also upgrades legacy loss-stopped journals. An owned pending order is
+    always retained, and execution-integrity halts remain independent of funds.
+    """
+    updated = copy.deepcopy(state)
+    cash = money(cash, "available account cash", nonnegative=True)
+    timestamp(checked_at)
+    updated.update(account_cash=str(cash), account_cash_checked_at=checked_at,
+                   funds_policy=FUNDS_POLICY, stop_reason=None)
+    records = updated["history"] + updated["attempts"] + ([updated["pending"]] if updated.get("pending") else [])
+    breaches = any(execution_breaches(item) for item in records)
+    if updated.get("halt_reason") or breaches:
+        updated.update(mode="HALTED", halt_reason=updated.get("halt_reason") or "historical_execution_breach")
+    elif updated.get("pending") is None:
+        if cash < TRADE_BUDGET:
+            updated.update(mode="STOPPED", stop_reason="insufficient_funds")
+        else:
+            updated["mode"] = "SCANNING"
+    return validate(updated)
 
 
 def load(path):

@@ -14,7 +14,7 @@ from typing import Protocol
 from payout_quote import as_decimal
 from persistence import persist
 from selection import Candidate, distance_pct, rank, rejection_reason
-from state_store import (archive_and_reset, can_enter, load, record_entry,
+from state_store import (apply_balance_policy, archive_and_reset, can_enter, load, record_entry,
                          record_settlement, record_void, validate)
 from timing import in_entry_window, observation_fresh, round_key, seconds_to_close
 from universe import UNIVERSE, series_of
@@ -159,6 +159,12 @@ class PaperEngine:
     def tick(self):
         if self.source_update is not None:
             return 'SOURCE_UPDATE_HANDOFF'
+        if self.paper:
+            updated = apply_balance_policy(self.state)
+            if updated != self.state:
+                self._commit(updated, 'PAPER_STOP_POLICY_UPDATED', stop_reason=updated['stop_reason'])
+                if self.source_update is not None:
+                    return 'SOURCE_UPDATE_HANDOFF'
         if self.paper and self.state['mode'] == 'STOPPED':
             return 'STOPPED'
         now = self.clock()
@@ -311,17 +317,21 @@ def main(argv=None):
         _, archived = archive_and_reset(state_path, confirm=True)
         archives.append(archived)
     state = load(state_path)
-    if args.paper and state['mode'] == 'STOPPED':
-        LOG.info('STOPPED: persisted loss stop; explicit archive/reset required for a new session')
-        return 0
     def save(updated):
         return persist(updated, state_path, push=args.persist_to_github, source_sha=sha, extra_paths=archives)
-    if args.new_session:
+    # Loading can migrate the former loss-stop policy in memory. Make that
+    # policy change durable before discovering markets or placing paper entries.
+    policy_migrated = args.paper and state != json.loads(state_path.read_text(encoding='utf-8'))
+    if args.new_session or policy_migrated:
         receipt = save(state)
         if receipt and receipt.get('restart_required'):
-            LOG.info('SOURCE_UPDATE_HANDOFF: requested reset saved in %s; next workflow will test updated code',
+            LOG.info('SOURCE_UPDATE_HANDOFF: startup state saved in %s; next workflow will test updated code',
                      receipt['state_commit'])
             return 0
+    if args.paper and state['mode'] == 'STOPPED':
+        LOG.info('STOPPED: available paper balance %s is below the $1.00 minimum; ledger retained',
+                 state['balance'])
+        return 0
     from live_client import LiveKalshiClient
     client = LiveKalshiClient(args.quote_policy)
     engine = PaperEngine(client, state, persist_state=save, paper=args.paper, source=sha, report_dir=args.report_dir)

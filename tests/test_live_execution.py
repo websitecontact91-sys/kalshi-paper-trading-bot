@@ -8,7 +8,7 @@ import pytest
 from live_broker import AmbiguousOrderError, OrderRejected, TradingDisabled
 from live_execution import (CandidateInvalid, LiveExecution, LiveExecutionError,
                             iso, normalize_execution, ReconciliationMismatch)
-from live_state import LiveStateError, load, new_state, save, validate
+from live_state import LiveStateError, load, new_state, save, validate, apply_balance, FUNDS_POLICY
 from timing import round_key
 
 CLOSE = 1800000000
@@ -192,7 +192,8 @@ def test_account_preflight_blocks_without_reserving_a_round(fx, mode):
     if mode == "cash": fx.broker.cash = ".99"
     if mode == "position": fx.broker.existing_positions = [{"ticker": TICKER, "position_fp": "1.00"}]
     if mode == "order": fx.broker.existing_orders = [{"ticker": TICKER, "status": "resting"}]
-    assert fx.engine.submit(candidate(fx.clock)).startswith("BLOCKED_")
+    result = fx.engine.submit(candidate(fx.clock))
+    assert result == "STOPPED" if mode == "cash" else result.startswith("BLOCKED_")
     assert not fx.broker.posts and not fx.engine.state["attempted_rounds"]
 
 
@@ -302,17 +303,191 @@ def test_settlement_uses_actual_fill_costs_and_not_changes_in_account_cash(fx):
     assert fx.engine.submit(candidate(fx.clock)) == "BLOCKED_ALREADY_ATTEMPTED_ROUND"
 
 
-def test_loss_persists_stop_across_restart_and_later_rounds(fx):
+def test_loss_continues_across_restart_into_later_rounds(fx):
     fx.engine.submit(candidate(fx.clock))
     fx.settle("no")
-    assert fx.engine.reconcile() == "STOPPED"
+    assert fx.engine.reconcile() == "SCANNING"
     engine = fx.restart(armed=True)
-    assert engine.submit(candidate(fx.clock, round_key=round_key(CLOSE + 900), close_time=iso(CLOSE + 900))) == "STOPPED"
-    assert len(fx.broker.posts) == 1
+    fx.clock.now = CLOSE + 870
+    fx.market.update(status="active", result="")
+    fx.broker.settled = []
+    assert engine.submit(candidate(fx.clock, round_key=round_key(CLOSE + 900), close_time=iso(CLOSE + 900))) == "WAITING_FOR_SETTLEMENT"
+    assert len(fx.broker.posts) == 2
     assert D(engine.state["realized_pnl"]) == D("-.90")
+    fx.settle("yes")
+    fx.broker.settled[0]["settled_time"] = iso(CLOSE + 930)
+    assert engine.reconcile() == "SCANNING"
+    assert len(engine.state["history"]) == 2
+    assert D(engine.state["realized_pnl"]) == D("-.80")
+    validate(load(fx.path))
 
 
-@pytest.mark.parametrize("result,mode,pnl", [("no", "SCANNING", ".10"), ("yes", "STOPPED", "-.90")])
+@pytest.mark.parametrize("cash,expected", [("0", "STOPPED"), (".9999", "STOPPED"),
+                                           ("1.00", "SCANNING"), ("1.0001", "SCANNING")])
+def test_idle_funds_gate_checks_exact_one_dollar_without_any_candidate(fx, cash, expected):
+    fx.broker.cash = cash
+    assert fx.engine.tick() == expected
+    assert D(fx.engine.state["account_cash"]) == D(cash)
+    assert fx.broker.reads == ["balance"] and not fx.broker.posts
+    if expected == "STOPPED":
+        assert load(fx.path)["stop_reason"] == "insufficient_funds"
+        assert load(fx.path)["account_cash_checked_at"] is not None
+    else:
+        assert fx.engine.state["stop_reason"] is None
+
+
+def test_one_dollar_cash_allows_entry_even_when_trade_costs_less(fx):
+    fx.broker.cash = "1.00"
+    assert fx.engine.submit(candidate(fx.clock)) == "WAITING_FOR_SETTLEMENT"
+    assert len(fx.broker.posts) == 1
+    assert D(fx.engine.state["pending"]["execution"]["debit"]) == D(".90")
+
+
+def test_less_than_one_dollar_stops_even_if_the_expected_purchase_fits(fx):
+    fx.broker.cash = ".9999"
+    assert fx.engine.submit(candidate(fx.clock)) == "STOPPED"
+    assert not fx.broker.posts and not fx.engine.state["attempted_rounds"]
+
+
+def test_idle_balance_cache_expires_and_submission_always_refreshes(fx):
+    assert fx.engine.tick() == "SCANNING"
+    fx.broker.cash = ".9999"
+    fx.clock.now += 4
+    assert fx.engine.tick() == "SCANNING"
+    assert fx.broker.reads == ["balance"]
+    assert fx.engine.submit(candidate(fx.clock)) == "STOPPED"
+    assert fx.broker.reads == ["balance", "balance"]
+    assert not fx.broker.posts
+
+
+def test_idle_scan_notices_low_cash_without_a_trade_signal(fx):
+    assert fx.engine.tick() == "SCANNING"
+    fx.broker.cash = ".9999"
+    fx.clock.now += 5
+    assert fx.engine.tick() == "STOPPED"
+    assert fx.broker.reads == ["balance", "balance"]
+
+
+@pytest.mark.parametrize("result", ["yes", "no", "void"])
+@pytest.mark.parametrize("cash,mode", [(".9999", "STOPPED"), ("1.00", "SCANNING")])
+def test_every_settlement_uses_latest_cash_for_next_mode(fx, result, cash, mode):
+    fx.engine.submit(candidate(fx.clock))
+    fx.settle(result, revenue=90 if result == "void" else None)
+    if result == "void":
+        fx.market.update(status="voided", result="void")
+    fx.broker.cash = cash
+    assert fx.engine.reconcile() == mode
+    state = load(fx.path)
+    assert D(state["account_cash"]) == D(cash) and state["pending"] is None
+    assert state["stop_reason"] == ("insufficient_funds" if mode == "STOPPED" else None)
+    assert len(state["history"]) == 1
+
+
+def test_pending_order_keeps_reconciling_when_available_cash_is_below_one(fx):
+    fx.engine.submit(candidate(fx.clock))
+    fx.broker.cash = ".10"
+    reads = list(fx.broker.reads)
+    assert fx.engine.check_funds(force=True) == "WAITING_FOR_SETTLEMENT"
+    assert fx.broker.reads == reads
+    assert fx.engine.tick() == "WAITING_FOR_SETTLEMENT"
+    assert fx.engine.state["pending"] is not None
+    fx.settle("yes")
+    fx.broker.cash = "1.10"
+    assert fx.engine.tick() == "SCANNING"
+    assert len(fx.broker.posts) == 1 and len(fx.engine.state["history"]) == 1
+
+
+@pytest.mark.parametrize("kind", ["rejected", "canceled"])
+def test_unfilled_terminal_order_refreshes_cash_and_can_stop(fx, kind):
+    if kind == "rejected":
+        def rejected(**kwargs):
+            fx.broker.posts.append(kwargs)
+            fx.broker.cash = ".9999"
+            raise OrderRejected(400)
+        fx.broker.submit_limit_buy = rejected
+        result = fx.engine.submit(candidate(fx.clock))
+    else:
+        fx.broker.submit_error = AmbiguousOrderError("mock")
+        fx.engine.submit(candidate(fx.clock))
+        fx.broker.cash = ".9999"
+        fx.broker.order.update(fill_count_fp="0", remaining_count_fp="0", status="canceled",
+                              taker_fill_cost_dollars="0", taker_fees_dollars="0")
+        fx.broker.executions = []
+        result = fx.engine.reconcile()
+    assert result == "STOPPED"
+    state = load(fx.path)
+    assert state["stop_reason"] == "insufficient_funds"
+    assert state["pending"] is None and not state["history"]
+    assert len(state["attempts"]) == 1 and len(fx.broker.posts) == 1
+
+
+def test_deposit_resumes_funds_stopped_journal_after_restart_without_reset(fx):
+    fx.broker.cash = ".9999"
+    fx.engine.tick()
+    previous = load(fx.path)
+    fx.broker.cash = "1.00"
+    restarted = fx.restart(armed=True)
+    assert restarted.check_funds() == "SCANNING"
+    current = load(fx.path)
+    assert current["stop_reason"] is None and current["account_cash"] == "1.00"
+    for field in ("session_id", "history", "attempts", "attempted_rounds", "realized_pnl"):
+        assert current[field] == previous[field]
+
+
+def test_legacy_loss_stop_migrates_only_after_successful_fresh_balance_read(fx):
+    fx.engine.submit(candidate(fx.clock))
+    fx.settle("no")
+    fx.engine.reconcile()
+    legacy = load(fx.path)
+    legacy.pop("funds_policy")
+    legacy.pop("stop_reason")
+    legacy["mode"] = "STOPPED"
+    save(fx.path, legacy)
+    original_bytes = fx.path.read_bytes()
+    restarted = fx.restart(armed=True)
+    original_balance = fx.broker.balance
+    fx.broker.balance = lambda: (_ for _ in ()).throw(TimeoutError("synthetic"))
+    assert restarted.check_funds() == "BLOCKED_BALANCE_UNAVAILABLE"
+    assert restarted.state["mode"] == "STOPPED" and fx.path.read_bytes() == original_bytes
+    fx.broker.balance = original_balance
+    fx.broker.cash = "1.00"
+    assert restarted.check_funds() == "SCANNING"
+    current = load(fx.path)
+    assert current["funds_policy"] == FUNDS_POLICY and current["stop_reason"] is None
+    for field in ("session_id", "history", "attempts", "attempted_rounds", "realized_pnl"):
+        assert current[field] == legacy[field]
+
+
+def test_failed_balance_read_cannot_use_saved_or_cached_cash_for_submission(fx):
+    assert fx.engine.check_funds() == "SCANNING"
+    fx.broker.balance = lambda: (_ for _ in ()).throw(TimeoutError("synthetic"))
+    assert fx.engine.submit(candidate(fx.clock)) == "BLOCKED_BALANCE_UNAVAILABLE"
+    assert fx.engine.tick() == "BLOCKED_BALANCE_UNAVAILABLE"
+    assert not fx.broker.posts and not fx.engine.state["attempted_rounds"]
+
+
+def test_settlement_survives_balance_read_outage_but_next_scan_is_blocked(fx):
+    fx.engine.submit(candidate(fx.clock))
+    fx.settle("no")
+    fx.broker.balance = lambda: (_ for _ in ()).throw(TimeoutError("synthetic"))
+    assert fx.engine.reconcile() == "SCANNING"
+    state = load(fx.path)
+    assert state["pending"] is None and len(state["history"]) == 1
+    assert state["account_cash"] is None and state["account_cash_checked_at"] is None
+    assert fx.engine.tick() == "BLOCKED_BALANCE_UNAVAILABLE"
+    assert len(fx.broker.posts) == 1
+
+
+def test_forged_scanning_mode_cannot_clear_a_confirmed_funds_stop(fx):
+    fx.broker.cash = ".9999"
+    fx.engine.tick()
+    state = load(fx.path)
+    state.update(mode="SCANNING", stop_reason=None)
+    with pytest.raises(LiveStateError, match="Insufficient"):
+        validate(state)
+
+
+@pytest.mark.parametrize("result,mode,pnl", [("no", "SCANNING", ".10"), ("yes", "SCANNING", "-.90")])
 def test_no_side_account_settlement_uses_no_leg_costs(fx, result, mode, pnl):
     fx.engine.submit(candidate(fx.clock, "NO"))
     fx.settle(result)
@@ -513,13 +688,13 @@ def test_missing_or_corrupt_state_is_never_reinitialized(tmp_path):
     assert path.read_bytes() == before
 
 
-def test_state_rejects_forged_profit_and_loss_reset(fx):
+def test_state_allows_loss_continuation_but_rejects_forged_profit(fx):
     fx.engine.submit(candidate(fx.clock))
     fx.settle("no")
     fx.engine.reconcile()
     state = load(fx.path)
     state["mode"] = "SCANNING"
-    with pytest.raises(LiveStateError): validate(state)
+    validate(state)
     state = load(fx.path)
     state["realized_pnl"] = "100.00"
     with pytest.raises(LiveStateError): validate(state)

@@ -10,10 +10,10 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 
 import live_runner
 from live_broker import LiveBroker
-from live_execution import CandidateInvalid
+from live_execution import CandidateInvalid, iso
 from live_persistence import LivePersistenceError
 from live_runner import LiveCandidateProvider, LiveSettings, settings
-from live_state import new_state, save
+from live_state import new_state, save, load, apply_balance, FUNDS_POLICY
 from payout_quote import PayoutQuote
 from quote_adapter import QuoteDetails, build_modeled_quote
 from timing import round_key
@@ -260,11 +260,21 @@ def test_execution_requires_shared_remote_journal_before_account_client(
     assert 'shared GitHub live journal' in capsys.readouterr().err
 
 
-def inspection_setup(tmp_path, monkeypatch, *, mode, pending=False, other_account=False):
+def inspection_setup(tmp_path, monkeypatch, *, mode, pending=False, other_account=False,
+                     cash=None, legacy=False):
     class NoAccountHTTP:
         closed = False
+        reads = 0
         def get(self, *args, **kwargs):
-            pytest.fail('State inspection must not read the account over HTTP')
+            self.reads += 1
+            if cash is None:
+                pytest.fail('This state inspection must not read the account over HTTP')
+            if isinstance(cash, Exception):
+                raise cash
+            class Response:
+                status_code, headers = 200, {}
+                text = json.dumps({'balance_dollars': cash, 'portfolio_value': 0, 'updated_ts': NOW})
+            return Response()
         def post(self, *args, **kwargs):
             pytest.fail('State inspection attempted an account mutation')
         def close(self):
@@ -280,6 +290,12 @@ def inspection_setup(tmp_path, monkeypatch, *, mode, pending=False, other_accoun
     state = new_state(session_id='inspection-test',
                       account_scope='different-account' if other_account else broker.account_scope)
     state['mode'] = mode
+    if mode == 'STOPPED':
+        if legacy:
+            state.pop('funds_policy')
+            state.pop('stop_reason')
+        else:
+            state = apply_balance(state, '.25', iso(NOW - 60))
     if mode == 'HALTED':
         state['halt_reason'] = 'synthetic_manual_review_required'
     if pending:
@@ -299,13 +315,13 @@ def inspection_setup(tmp_path, monkeypatch, *, mode, pending=False, other_accoun
     return args, transport, state_path, original, github_output
 
 
-@pytest.mark.parametrize('mode', ['STOPPED', 'HALTED'])
-def test_inspection_blocks_terminal_sessions_without_reading_account(
-        tmp_path, monkeypatch, capsys, mode):
-    args, transport, path, original, output = inspection_setup(tmp_path, monkeypatch, mode=mode)
+def test_inspection_blocks_execution_halt_without_reading_account(
+        tmp_path, monkeypatch, capsys):
+    args, transport, path, original, output = inspection_setup(tmp_path, monkeypatch, mode='HALTED')
     assert live_runner.main(args) == 0
     assert json.loads(capsys.readouterr().out) == {
-        'mode': mode, 'can_run': False, 'pending': False, 'writes_enabled': False}
+        'mode': 'HALTED', 'can_run': False, 'pending': False, 'writes_enabled': False,
+        'stop_reason': None, 'funds_check': 'HALTED', 'account_cash': None}
     assert output.read_text() == 'can_run=false\n'
     assert path.read_bytes() == original and transport.closed
 
@@ -317,7 +333,8 @@ def test_inspection_allows_pending_reconciliation_with_order_writes_disabled(
         tmp_path, monkeypatch, mode=mode, pending=True)
     assert live_runner.main(args) == 0
     assert json.loads(capsys.readouterr().out) == {
-        'mode': mode, 'can_run': True, 'pending': True, 'writes_enabled': False}
+        'mode': mode, 'can_run': True, 'pending': True, 'writes_enabled': False,
+        'stop_reason': None, 'funds_check': mode, 'account_cash': None}
     assert output.read_text() == 'can_run=true\n'
     assert path.read_bytes() == original and transport.closed
 
@@ -330,6 +347,48 @@ def test_inspection_rejects_wrong_account_scope_before_emitting_run_permission(
         live_runner.main(args)
     assert not output.exists() and capsys.readouterr().out == ''
     assert path.read_bytes() == original and transport.closed
+
+
+@pytest.mark.parametrize('cash,mode,can_run', [('.9999', 'STOPPED', False), ('1.00', 'SCANNING', True)])
+def test_inspection_refreshes_funds_stop_and_resumes_only_with_enough_cash(
+        tmp_path, monkeypatch, capsys, cash, mode, can_run):
+    args, transport, path, original, output = inspection_setup(
+        tmp_path, monkeypatch, mode='STOPPED', cash=cash)
+    before = load(path)
+    assert live_runner.main(args) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report['mode'] == mode and report['can_run'] is can_run
+    assert D(report['account_cash']) == D(cash)
+    assert report['stop_reason'] == ('insufficient_funds' if not can_run else None)
+    assert report['writes_enabled'] is False and transport.reads == 1 and transport.closed
+    assert output.read_text() == 'can_run=' + str(can_run).lower() + '\n'
+    after = load(path)
+    for field in ('session_id', 'history', 'attempts', 'attempted_rounds', 'realized_pnl'):
+        assert after[field] == before[field]
+    if can_run:
+        assert after['mode'] == 'SCANNING' and after['stop_reason'] is None
+
+
+def test_inspection_migrates_legacy_stop_with_get_only_balance_read(tmp_path, monkeypatch, capsys):
+    args, transport, path, original, output = inspection_setup(
+        tmp_path, monkeypatch, mode='STOPPED', cash='1.00', legacy=True)
+    assert live_runner.main(args) == 0
+    assert json.loads(capsys.readouterr().out)['can_run'] is True
+    assert load(path)['funds_policy'] == FUNDS_POLICY
+    assert load(path)['mode'] == 'SCANNING' and transport.reads == 1
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+def test_inspection_balance_outage_cannot_restart_a_stopped_journal(
+        tmp_path, monkeypatch, capsys, legacy):
+    args, transport, path, original, output = inspection_setup(
+        tmp_path, monkeypatch, mode='STOPPED', cash=TimeoutError('synthetic'), legacy=legacy)
+    assert live_runner.main(args) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report['mode'] == 'STOPPED' and report['can_run'] is False
+    assert report['funds_check'] == 'BLOCKED_BALANCE_UNAVAILABLE'
+    assert path.read_bytes() == original and output.read_text() == 'can_run=false\n'
+    assert transport.closed
 
 
 def test_default_main_uses_only_authenticated_get_and_does_not_initialize_state(tmp_path, monkeypatch):
@@ -365,6 +424,92 @@ def test_default_main_uses_only_authenticated_get_and_does_not_initialize_state(
     report = json.loads((report_dir / 'preflight.json').read_text())
     assert report['writes_enabled'] is False and report['real_order_execution_tested'] is False
     assert report['account']['available_balance_usd'] == '19.8499'
+    assert report['minimum_available_cash_usd'] == '1.00'
+    assert report['sufficient_funds_for_new_trade'] is True
+
+
+@pytest.mark.parametrize('cash,mode', [('.9999', 'STOPPED'), ('1.00', 'SCANNING')])
+def test_explicit_initialization_records_funds_mode_without_orders(tmp_path, monkeypatch, cash, mode):
+    class Account:
+        account_scope = 'synthetic-initialization'
+        def balance(self):
+            return {'available_balance_usd': cash}
+        def close(self):
+            pass
+    def factory(**kwargs):
+        assert kwargs['allow_trading'] is False
+        return Account()
+    monkeypatch.setattr(live_runner, 'LiveBroker', factory)
+    path = tmp_path / 'initialized.json'
+    assert live_runner.main(['--initialize-state', '--config', str(config_file(tmp_path)),
+        '--state', str(path), '--report-dir', str(tmp_path / 'reports')]) == 0
+    state = load(path)
+    assert state['mode'] == mode and D(state['account_cash']) == D(cash)
+    assert state['stop_reason'] == ('insufficient_funds' if mode == 'STOPPED' else None)
+    assert state['history'] == [] and state['pending'] is None
+
+
+@pytest.mark.parametrize('cash,expected_scan,expected_mode', [
+    ('.9999', False, 'STOPPED'), ('1.00', True, 'SCANNING'),
+    (TimeoutError('synthetic'), False, 'SCANNING')])
+def test_runner_checks_cash_before_market_scan_even_without_candidates(
+        tmp_path, monkeypatch, cash, expected_scan, expected_mode):
+    import live_client
+    events, saved = [], []
+    class Account:
+        account_scope = 'synthetic-loop-account'
+        writes_enabled = True
+        def __init__(self, **kwargs):
+            pass
+        def balance(self):
+            events.append('balance')
+            if isinstance(cash, Exception):
+                raise cash
+            return {'available_balance_usd': cash}
+        def close(self):
+            pass
+    class Store:
+        def __init__(self, *args, **kwargs):
+            pass
+        @contextmanager
+        def locked(self):
+            yield self
+        def read(self):
+            return new_state(account_scope=Account.account_scope)
+        def persist(self, state):
+            saved.append(copy.deepcopy(state))
+            return {'durable': True, 'remote': True}
+    class Market:
+        readiness_reasons = []
+        def __init__(self, *args):
+            pass
+        def official_market(self, ticker):
+            pytest.fail('No pending order exists')
+        def close(self):
+            pass
+    class Provider:
+        def __init__(self, *args, **kwargs):
+            pass
+        def candidates(self, attempted):
+            events.append('scan')
+            return iter(())
+    ticks = iter(range(100, 200))
+    monkeypatch.setattr(live_runner.time, 'monotonic', lambda: next(ticks))
+    monkeypatch.setattr(live_runner.time, 'sleep', lambda seconds: None)
+    monkeypatch.setattr(live_runner, 'settings', lambda path: LiveSettings(enabled=True, duration=3))
+    monkeypatch.setattr(live_runner, 'LiveBroker', Account)
+    monkeypatch.setattr(live_runner, 'LiveStore', Store)
+    monkeypatch.setattr(live_runner, 'LiveCandidateProvider', Provider)
+    monkeypatch.setattr(live_client, 'LiveKalshiClient', Market)
+    monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    report_dir = tmp_path / 'reports'
+    assert live_runner.main(['--execute-live', '--confirm-real-money', '--persist-to-github',
+        '--report-dir', str(report_dir)]) == 0
+    assert events == (['balance', 'scan'] if expected_scan else ['balance'])
+    report = json.loads((report_dir / 'execution-summary.json').read_text())
+    assert report['mode'] == expected_mode
+    if expected_mode == 'STOPPED':
+        assert saved[-1]['stop_reason'] == report['stop_reason'] == 'insufficient_funds'
 
 
 def isolated_loop(tmp_path, monkeypatch, raised, *, quote_blockers=()):
@@ -407,6 +552,8 @@ def isolated_loop(tmp_path, monkeypatch, raised, *, quote_blockers=()):
         def submit(self, candidate):
             calls.append('candidate_rejected')
             raise raised
+        def check_funds(self):
+            return 'SCANNING'
         def reconcile(self):
             calls.append('reconcile')
             return self.state['mode']

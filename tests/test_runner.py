@@ -1,8 +1,9 @@
 import copy
+import json
 from decimal import Decimal as D
 from pathlib import Path
 import pytest
-from paper_runner import PaperEngine, main
+from paper_runner import PaperEngine, iso, main
 from persistence import PersistenceError, persist
 from simulate import FakeClock, FakeKalshiClient, SCENARIOS, run_scenario
 from state_store import load, new_state, save
@@ -67,6 +68,71 @@ def test_same_round_stays_used_after_a_win(live_engine):
     engine.tick()
     assert engine.state['pending'] is None
     assert len(load(path)['rounds_traded']) == 1
+
+
+def test_loss_resumes_scanning_and_enters_only_the_next_round_after_restart(live_engine):
+    engine, client, clock, path = live_engine
+    engine.tick()
+    original_entry = copy.deepcopy(engine.state['pending'])
+    client.status, client.result = 'settled', 'no'
+    engine.tick()
+    assert engine.state['mode'] == 'SCANNING'
+    assert D(engine.state['balance']) == D('999.0079')
+    restarted = PaperEngine(client, load(path), persist_state=lambda s: persist(s, path),
+                            paper=True, clock=clock)
+    discoveries = client.discoveries
+    restarted.tick()
+    assert client.discoveries == discoveries + 1
+    assert restarted.state['pending'] is None  # This round stays used after a loss.
+    client.close_time += 900
+    client.markets[0].update(ticker='KXSOL15M-NEXT', close_time=iso(client.close_time))
+    clock.now = client.close_time - 59
+    restarted.tick()
+    saved = load(path)
+    assert saved['pending']['ticker'] == 'KXSOL15M-NEXT'
+    assert saved['pending']['round_key'] != original_entry['round_key']
+    assert len(saved['history']) == 1 and saved['history'][0]['won'] is False
+    assert len(saved['rounds_traded']) == 2
+    assert D(saved['balance']) == D('998.0158')
+
+
+@pytest.mark.parametrize('result,mode,balance', [('yes', 'SCANNING', '1.1379'),
+                                               ('no', 'STOPPED', '0.0079')])
+def test_cash_committed_below_one_dollar_keeps_reconciling_pending_trade(tmp_path, result, mode, balance):
+    clock, path = FakeClock(), tmp_path / 'state.json'
+    client = FakeKalshiClient(clock)
+    engine = PaperEngine(client, new_state('1.00'), persist_state=lambda s: persist(s, path),
+                         paper=True, clock=clock)
+    engine.tick()
+    assert engine.state['mode'] == 'WAITING_FOR_SETTLEMENT'
+    assert D(engine.state['balance']) < 1
+    restarted = PaperEngine(client, load(path), persist_state=lambda s: persist(s, path),
+                            paper=True, clock=clock)
+    client.status, client.result = 'settled', result
+    discoveries = client.discoveries
+    restarted.tick()
+    assert client.discoveries == discoveries
+    assert restarted.state['pending'] is None
+    assert restarted.state['mode'] == mode
+    assert D(restarted.state['balance']) == D(balance)
+    if mode == 'STOPPED':
+        restarted.tick()
+        assert client.discoveries == discoveries
+
+
+def test_legacy_low_cash_mode_is_durably_stopped_before_market_discovery(tmp_path):
+    clock, path = FakeClock(), tmp_path / 'state.json'
+    client = FakeKalshiClient(clock)
+    legacy = new_state('0.9999')
+    legacy.pop('stop_policy')
+    legacy.pop('stop_reason')
+    legacy['mode'] = 'SCANNING'
+    engine = PaperEngine(client, legacy, persist_state=lambda s: persist(s, path), paper=True, clock=clock)
+    assert engine.tick() == 'STOPPED'
+    assert client.discoveries == 0
+    assert load(path)['mode'] == 'STOPPED'
+    assert load(path)['balance'] == '0.9999'
+    assert any(event['kind'] == 'PAPER_STOP_POLICY_UPDATED' for event in engine.events)
 
 def test_provisional_yes_is_not_settlement(live_engine):
     engine, client, _, _ = live_engine
@@ -188,7 +254,7 @@ def test_source_update_handoff_retains_durable_transition_and_stops_io(live_engi
     elif transition in ('win', 'loss'):
         assert engine.state['pending'] is None
         assert len(engine.state['history']) == 1
-        assert engine.state['mode'] == ('SCANNING' if transition == 'win' else 'STOPPED')
+        assert engine.state['mode'] == 'SCANNING'
     else:
         assert engine.state['pending'] is None and len(engine.state['round_reports']) == 1
 
@@ -275,7 +341,7 @@ def test_cli_stopped_exits_without_live_client(tmp_path, monkeypatch):
     import live_client
     clock = FakeClock(); client = FakeKalshiClient(clock)
     path = tmp_path/'stopped.json'
-    engine = PaperEngine(client, new_state(session_id='stop'),
+    engine = PaperEngine(client, new_state('1.00', session_id='stop'),
         persist_state=lambda s: persist(s,path), paper=True, clock=clock)
     engine.tick(); client.status,client.result='settled','no'; engine.tick()
     before=path.read_bytes()
@@ -286,7 +352,57 @@ def test_cli_stopped_exits_without_live_client(tmp_path, monkeypatch):
     assert path.read_bytes() == before
 
 
-@pytest.mark.parametrize('official_result,mode', [('yes', 'SCANNING'), ('no', 'STOPPED')])
+@pytest.mark.parametrize('persist_fails', [False, True])
+def test_cli_legacy_loss_policy_is_persisted_before_creating_market_client(tmp_path, monkeypatch, persist_fails):
+    import live_client
+    import paper_runner
+    from state_store import record_entry, record_settlement
+    path = tmp_path / 'legacy-loss-stop.json'
+    old = new_state('10.00', session_id='same-session')
+    record_entry(old, '1992550', {'ticker': 'KXSOL15M-OLD', 'side': 'YES',
+        'budget': '1.00', 'debit': '1.00', 'payout': '1.13'})
+    record_settlement(old, 'no')
+    old.pop('stop_policy')
+    old.pop('stop_reason')
+    old['mode'] = 'STOPPED'
+    old['history'][0]['state_after'] = 'STOPPED'
+    path.write_text(json.dumps(old))
+    before = path.read_bytes()
+    calls = []
+
+    def durable(state, destination, **kwargs):
+        calls.append('persist')
+        assert state['session_id'] == old['session_id']
+        assert state['balance'] == old['balance']
+        assert state['history'] == old['history']
+        assert state['rounds_traded'] == old['rounds_traded']
+        if persist_fails:
+            raise PersistenceError('Migration was not saved')
+        return persist(state, destination)
+
+    def construct(*args, **kwargs):
+        assert calls == ['persist']
+        assert json.loads(path.read_text())['mode'] == 'SCANNING'
+        calls.append('client')
+        return FakeKalshiClient(FakeClock())
+
+    monkeypatch.setenv('PAPER_SOURCE_SHA', 'synthetic')
+    monkeypatch.setattr(paper_runner, 'persist', durable)
+    monkeypatch.setattr(live_client, 'LiveKalshiClient', construct)
+    args = ['--paper', '--state', str(path), '--report-dir', str(tmp_path / 'reports'),
+            '--duration', '0.001', '--interval', '0.001']
+    if persist_fails:
+        with pytest.raises(PersistenceError, match='not saved'):
+            main(args)
+        assert calls == ['persist']
+        assert path.read_bytes() == before
+    else:
+        assert main(args) == 0
+        assert calls[:2] == ['persist', 'client']
+        assert load(path)['mode'] == 'SCANNING'
+
+
+@pytest.mark.parametrize('official_result,mode', [('yes', 'SCANNING'), ('no', 'SCANNING')])
 def test_configured_api_paper_quotes_enter_and_settle_without_ui_capture(tmp_path, official_result, mode):
     """Controlled API-shaped data crosses the real adapter, engine and persistence.
 

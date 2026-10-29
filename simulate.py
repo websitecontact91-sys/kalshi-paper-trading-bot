@@ -119,8 +119,9 @@ def run_scenario(name):
             if name == 'loss':
                 restarted = PaperEngine(client, load(path), persist_state=durable, paper=True, clock=clock)
                 discoveries = client.discoveries
-                assert restarted.tick() == 'STOPPED'
-                assert client.discoveries == discoveries
+                assert restarted.tick() == 'SCANNING'
+                assert client.discoveries == discoveries + 1
+                assert can_enter(restarted.state, round_key(client.close_time+900))
             else:
                 assert engine.state['mode'] == 'SCANNING'
                 assert can_enter(engine.state, round_key(client.close_time+900))

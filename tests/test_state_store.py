@@ -101,19 +101,20 @@ def test_current_legacy_win_migrates_without_resetting_balance_or_history(tmp_pa
     assert state["rounds_traded"] == ["1992550"]
 
 
-def test_archived_legacy_loss_stays_stopped_and_is_not_overwritten(tmp_path):
+def test_legacy_loss_migrates_to_funded_scanning_without_overwriting_file(tmp_path):
     path = tmp_path / "archived.json"
     path.write_text(json.dumps(legacy_state(False)))
     before = path.read_bytes()
     state = store.load(path)
     assert state["balance"] == "995.2"
-    assert state["mode"] == "STOPPED"
-    assert not store.can_enter(state, "1992551")
+    assert state["mode"] == "SCANNING"
+    assert state["stop_policy"] == store.STOP_POLICY
+    assert state["stop_reason"] is None
+    assert store.can_enter(state, "1992551")
     assert path.read_bytes() == before
     bad = legacy_state(False)
     bad["mode"] = "SCANNING"
-    with pytest.raises(store.StateError, match="STOPPED"):
-        store.migrate(bad)
+    assert store.migrate(bad)["mode"] == "SCANNING"
 
 
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", True, 1000.0])
@@ -186,7 +187,7 @@ def test_new_entries_over_one_dollar_budget_are_refused_without_mutation(budget,
 
 
 @pytest.mark.parametrize("result,expected,mode", [("yes", "1000.69", "SCANNING"),
-                                                ("no", "995.00", "STOPPED")])
+                                                ("no", "995.00", "SCANNING")])
 def test_old_five_dollar_pending_trade_is_preserved_and_settled_after_budget_change(tmp_path, result, expected, mode):
     # This is a saved pre-change position, not a newly permitted $5 entry.
     old = {"version": 1, "mode": "WAITING_FOR_SETTLEMENT", "balance": 995.0,
@@ -213,3 +214,129 @@ def test_old_five_dollar_pending_trade_is_preserved_and_settled_after_budget_cha
         assert len(restarted["history"]) == 1
     else:
         assert not store.can_enter(restarted, "1992551")
+
+
+@pytest.mark.parametrize("balance,mode,allowed", [("0.9999", "STOPPED", False),
+                                                 ("1.00", "SCANNING", True),
+                                                 ("1.0001", "SCANNING", True),
+                                                 ("0", "STOPPED", False)])
+def test_available_cash_minimum_is_exact_and_includes_fees(balance, mode, allowed):
+    state = store.new_state(balance)
+    assert state["mode"] == mode
+    assert store.can_enter(state, "1992550") is allowed
+    if allowed:
+        store.record_entry(state, "1992550", trade())
+        assert state["mode"] == "WAITING_FOR_SETTLEMENT"
+    else:
+        before = copy.deepcopy(state)
+        with pytest.raises(store.StateError, match="refused"):
+            store.record_entry(state, "1992550", trade(debit="0.50"))
+        assert state == before
+
+
+def test_current_schema_loss_migration_preserves_history_and_all_financial_values(tmp_path):
+    state = store.new_state("3.00", session_id="keep-session")
+    store.record_entry(state, "1992550", trade())
+    store.record_settlement(state, "no", settled_at=123)
+    # Exact saved shape of the former policy: the current mode and historical
+    # state_after recorded a stop. Only the former is allowed to change.
+    state.pop("stop_policy")
+    state.pop("stop_reason")
+    state["mode"] = "STOPPED"
+    state["history"][-1]["state_after"] = "STOPPED"
+    state["round_reports"] = [{"mode": "STOPPED", "audit": "keep-exact"}]
+    before = copy.deepcopy(state)
+    path = tmp_path / "old-current-schema.json"
+    path.write_text(json.dumps(state))
+    original_bytes = path.read_bytes()
+    migrated = store.load(path)
+    assert state == before
+    assert path.read_bytes() == original_bytes
+    assert migrated["mode"] == "SCANNING"
+    for key in ("session_id", "initial_balance", "balance", "history", "rounds_traded", "round_reports"):
+        assert migrated[key] == before[key]
+    assert store.apply_balance_policy(migrated) == migrated
+    store.save(path, migrated)
+    restored = store.load(path)
+    store.record_entry(restored, "1992551", trade())
+    store.record_settlement(restored, "yes")
+    assert len(restored["history"]) == 2
+    assert restored["history"][0]["state_after"] == "STOPPED"
+    assert restored["balance"] == "2.13"
+
+
+@pytest.mark.parametrize("change", [
+    {"balance": "2.01"}, {"rounds_traded": []}, {"stop_policy": "unknown_policy"},
+    {"stop_reason": "manual_unreviewed_halt"},
+])
+def test_policy_migration_does_not_repair_or_bypass_invalid_state(change):
+    state = store.new_state("3.00")
+    store.record_entry(state, "1992550", trade())
+    store.record_settlement(state, "no")
+    state.pop("stop_policy")
+    state.pop("stop_reason")
+    state["mode"] = "STOPPED"
+    state.update(change)
+    before = copy.deepcopy(state)
+    with pytest.raises(store.StateError):
+        store.apply_balance_policy(state)
+    assert state == before
+
+
+def test_stale_low_balance_legacy_scanning_migrates_to_insufficient_funds_stop():
+    state = store.new_state("0.9999")
+    state.pop("stop_policy")
+    state.pop("stop_reason")
+    state["mode"] = "SCANNING"
+    assert not store.can_enter(state, "1992550")
+    migrated = store.apply_balance_policy(state)
+    assert migrated["mode"] == "STOPPED"
+    assert migrated["stop_reason"] == "insufficient_funds"
+
+
+def test_current_policy_cannot_claim_funded_scanning_below_minimum():
+    state = store.new_state("0.9999")
+    state.update(mode="SCANNING", stop_reason=None)
+    with pytest.raises(store.StateError, match="available funds"):
+        store.validate(state)
+
+
+def test_current_schema_cannot_silently_discard_non_null_legacy_trade_alias():
+    state = store.new_state()
+    state["trade"] = trade(round_key="1992550")
+    before = copy.deepcopy(state)
+    with pytest.raises(store.StateError, match="trade alias"):
+        store.validate(state)
+    with pytest.raises(store.StateError, match="trade alias"):
+        store.migrate(state)
+    assert state == before
+
+
+def test_legacy_schema_cannot_silently_discard_non_null_current_pending_alias():
+    state = legacy_state()
+    state["pending"] = trade(round_key="1992551")
+    before = copy.deepcopy(state)
+    with pytest.raises(store.StateError, match="pending alias"):
+        store.migrate(state)
+    assert state == before
+
+
+@pytest.mark.parametrize("schema", ["current", "legacy"])
+def test_identical_position_alias_is_accepted_and_normalized_for_future_settlement(schema):
+    if schema == "current":
+        state = store.new_state()
+        store.record_entry(state, "1992550", trade())
+        state["trade"] = copy.deepcopy(state["pending"])
+        store.validate(state)
+    else:
+        position = {"ticker": "KXSOL15M-OLD", "side": "YES", "cost": 1.0,
+                    "count": 1.13, "fee_reserve": 0.03, "round_id": "1992550"}
+        state = {"version": 1, "mode": "WAITING_FOR_SETTLEMENT", "balance": 999.0,
+                 "history": [], "trade": position, "pending": copy.deepcopy(position)}
+    migrated = store.migrate(state)
+    assert "trade" not in migrated
+    assert migrated["pending"] is not None
+    assert migrated["mode"] == "WAITING_FOR_SETTLEMENT"
+    store.record_settlement(migrated, "yes")
+    assert migrated["pending"] is None
+    assert Decimal(migrated["balance"]) == Decimal("1000.13")
