@@ -1,18 +1,16 @@
-"""Offline checks for the all-market coverage classification."""
-from market_coverage import CF, PYTH_UNVERIFIED, classification
+"""Offline checks for Kalshi-only reference mapping coverage."""
+from market_coverage import CF, classification
+from kalshi_pyth import PYTH_INDEX_IDS
 
-
-def test_all_known_cf_markets_mapped():
-    assert len(CF) == 4
+def test_known_cf_markets_mapped():
+    assert len(CF) == 11
     for name in CF:
-        assert classification(name) == "CF_ENDPOINT_TESTED"
+        assert classification(name) == "KALSHI_CF_INDEX_MAPPED"
 
+def test_pyth_mapped_without_claiming_contract_validation():
+    assert len(PYTH_INDEX_IDS) == 19
+    for name in PYTH_INDEX_IDS:
+        assert classification(name) == "KALSHI_PYTH_STREAM_MAPPED_UNVERIFIED_CONTRACT"
 
-def test_pyth_not_mistaken_for_working():
-    assert len(PYTH_UNVERIFIED) == 5
-    for name in PYTH_UNVERIFIED:
-        assert classification(name) == "PYTH_UNAVAILABLE_OR_UNVERIFIED"
-
-
-def test_unknown_market_is_not_silently_enabled():
+def test_unknown_market_not_silently_enabled():
     assert classification("KXUNSEEN15M") == "NO_VERIFIED_SETTLEMENT_FEED"
