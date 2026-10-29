@@ -38,7 +38,7 @@ CF_INDEX_IDS = {
     'KXXRP15M': 'XRPUSD_RTI',
     'KXZEC15M': 'ZECUSD_RTI',
 }
-TRADE_NOTIONAL = 5.0  # Exact fixed-dollar hypothetical paper stake; fractional exposure, not executable contracts.
+TRADE_NOTIONAL = 5.0  # Exact dollar-denominated paper stake; never places real orders.
 
 
 def parse_time(value):
@@ -263,9 +263,8 @@ def evaluate_market(m, px, current_time, book, balance):
             depth = best_bid_depth(book, side, ask)
             if depth < math.ceil(payout):
                 continue
-            # Fixed $5 paper notional. Kalshi real orders require whole contracts;
-            # this fractional exposure is a mathematical simulation only.
-            # No unverified fees are deducted.
+            # Fixed $5 paper notional with a conservative, fee-inclusive quote.
+            # This is a simulation, not an executable order or UI guarantee.
             if balance + 1e-8 < TRADE_NOTIONAL:
                 continue
             count = payout
@@ -330,7 +329,7 @@ def loop(args):
     next_discovery = 0.0
     fee_cache = {}
     LOG.warning('REFERENCE COVERAGE mapped_cf=%d mapped_pyth=%d excluded_unmapped=5', len(CF_INDEX_IDS), len(PYTH_INDEX_IDS))
-    LOG.warning('NO REAL ORDERS. Mode=%s; fixed $%.2f paper notional; fractional simulated exposure; published taker fee estimate included',
+    LOG.warning('NO REAL ORDERS. Mode=%s; fixed $%.2f paper notional; dollar-denominated simulated exposure; published taker fee estimate included',
                 'PAPER' if args.paper else 'READ ONLY', TRADE_NOTIONAL)
     while time.monotonic() - started < args.duration:
         tick = time.monotonic()
