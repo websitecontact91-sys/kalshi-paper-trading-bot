@@ -352,8 +352,8 @@ def main():
     parser.add_argument('--paper', action='store_true')
     parser.add_argument('--persist-to-github', action='store_true')
     args = parser.parse_args()
-    if args.interval < 2 or not 1 <= args.duration <= 300:
-        parser.error('interval must be >= 2; duration must be 1-300 seconds')
+    if args.interval < 2 or not 1 <= args.duration <= 600:
+        parser.error('interval must be >= 2; duration must be 1-600 seconds')
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     loop(args)
 
