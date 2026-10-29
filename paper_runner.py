@@ -219,9 +219,12 @@ def settle(state, client):
     if not trade:
         raise RuntimeError('Missing pending paper trade')
     market = client.market(trade['ticker'])
-    result = str(market.get('result') or '').lower()
+    # Never infer settlement from a price quote or a closed trading window.
+    # The official market result is the sole authority for simulated P&L.
+    result = str(market.get('result') or '').strip().lower()
     if result not in ('yes', 'no'):
-        LOG.info('WAITING FOR SETTLEMENT %s', trade['ticker'])
+        LOG.info('WAITING FOR OFFICIAL RESULT %s status=%s result=%r',
+                 trade['ticker'], market.get('status'), result)
         return False
     won = result == trade['side'].lower()
     payout = trade['count'] if won else 0.0
