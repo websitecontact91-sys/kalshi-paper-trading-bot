@@ -27,3 +27,21 @@ def test_pyth_freshness_and_missing_fail_closed():
     price, ts = feed.price("KXGOLD15M")
     assert price == 2500.0
     assert candidate_is_fresh({"index_time":ts},time.time())
+
+def test_all_30_mapped_series_reach_entry_evaluation():
+    """Each mapped series can produce a paper candidate with valid Kalshi market inputs."""
+    from unittest.mock import patch
+    from paper_runner import evaluate_market
+    now = time.time()
+    for series in list(CF_INDEX_IDS) + list(PYTH_INDEX_IDS):
+        market = {
+            "ticker": series + "-TEST", "series_ticker": series,
+            "status": "open", "strike_type": "greater_or_equal",
+            "floor_strike": 100.0, "close_time": now + 45,
+            "yes_ask_dollars": "0.85", "no_ask_dollars": "0.15",
+        }
+        with patch("paper_runner.best_bid_depth", return_value=20):
+            candidates = evaluate_market(market, 105.0, now, {}, 1000.0)
+        assert len(candidates) == 1, series
+        assert candidates[0]["side"] == "YES", series
+        assert candidates[0]["cost"] <= 5, series
