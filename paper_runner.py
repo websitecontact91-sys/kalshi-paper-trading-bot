@@ -251,6 +251,8 @@ def loop(args):
             persist(state, push=True)
     cf = KalshiCFPrices()
     started = time.monotonic()
+    cached_markets = []
+    next_discovery = 0.0
     LOG.warning('NO REAL ORDERS. Mode=%s; estimated fee reserve $%.2f/share',
                 'PAPER' if args.paper else 'READ ONLY', FEE_RESERVE_PER_SHARE)
     while time.monotonic() - started < args.duration:
@@ -264,7 +266,13 @@ def loop(args):
             else:
                 LOG.info('READ ONLY: pending paper trade exists; settlement not changed')
         else:
-            markets = discover(client)
+            # A full /series + per-series market crawl is too slow to repeat
+            # every two seconds. Cache discovery for 60s, but refresh market
+            # details and orderbooks immediately before considering an entry.
+            if time.monotonic() >= next_discovery:
+                cached_markets = discover(client)
+                next_discovery = time.monotonic() + 60
+            markets = cached_markets
             candidates = []
             price_cache = {}
             unsupported = {}
