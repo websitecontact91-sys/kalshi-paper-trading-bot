@@ -1,0 +1,245 @@
+{
+  "cases": {
+    "KXBTC15M": {
+      "book": {
+        "orderbook_fp": {
+          "no_dollars": [
+            [
+              "0.3400",
+              "6291.99"
+            ]
+          ],
+          "yes_dollars": [
+            [
+              "0.6500",
+              "9510.28"
+            ]
+          ]
+        }
+      },
+      "observed_comparison": [
+        {
+          "book_ask": "0.6600",
+          "depth": "6291.99",
+          "opposite_bid": "0.3400",
+          "side": "YES",
+          "summary_after": "0.6200",
+          "summary_before": "0.6200"
+        },
+        {
+          "book_ask": "0.3500",
+          "depth": "9510.28",
+          "opposite_bid": "0.6500",
+          "side": "NO",
+          "summary_after": "0.3900",
+          "summary_before": "0.3900"
+        }
+      ],
+      "requests": {
+        "after": {
+          "received_at": "2026-10-29T19:19:38.232403+00:00",
+          "request_started_at": "2026-10-29T19:19:38.101056+00:00",
+          "url": "https://external-api.kalshi.com/trade-api/v2/markets/KXBTC15M-26OCT291530-30"
+        },
+        "before": {
+          "received_at": "2026-10-29T19:19:37.961872+00:00",
+          "request_started_at": "2026-10-29T19:19:37.787653+00:00",
+          "url": "https://external-api.kalshi.com/trade-api/v2/markets/KXBTC15M-26OCT291530-30"
+        },
+        "book": {
+          "received_at": "2026-10-29T19:19:38.099224+00:00",
+          "request_started_at": "2026-10-29T19:19:37.968461+00:00",
+          "url": "https://external-api.kalshi.com/trade-api/v2/markets/KXBTC15M-26OCT291530-30/orderbook"
+        }
+      },
+      "summary_after": {
+        "close_time": "2026-10-29T19:30:00Z",
+        "event_ticker": "KXBTC15M-26OCT291530",
+        "market_type": "binary",
+        "no_ask_dollars": "0.3900",
+        "notional_value_dollars": "1.0000",
+        "open_time": "2026-10-29T19:15:00Z",
+        "settlement_bounds_type": "default",
+        "status": "active",
+        "ticker": "KXBTC15M-26OCT291530-30",
+        "yes_ask_dollars": "0.6200"
+      },
+      "summary_before": {
+        "close_time": "2026-10-29T19:30:00Z",
+        "event_ticker": "KXBTC15M-26OCT291530",
+        "market_type": "binary",
+        "no_ask_dollars": "0.3900",
+        "notional_value_dollars": "1.0000",
+        "open_time": "2026-10-29T19:15:00Z",
+        "settlement_bounds_type": "default",
+        "status": "active",
+        "ticker": "KXBTC15M-26OCT291530-30",
+        "yes_ask_dollars": "0.6200"
+      },
+      "ticker": "KXBTC15M-26OCT291530-30"
+    },
+    "KXSOL15M": {
+      "book": {
+        "orderbook_fp": {
+          "no_dollars": [
+            [
+              "0.5900",
+              "655.96"
+            ]
+          ],
+          "yes_dollars": [
+            [
+              "0.4000",
+              "10.00"
+            ]
+          ]
+        }
+      },
+      "observed_comparison": [
+        {
+          "book_ask": "0.4100",
+          "depth": "655.96",
+          "opposite_bid": "0.5900",
+          "side": "YES",
+          "summary_after": "0.4100",
+          "summary_before": "0.4100"
+        },
+        {
+          "book_ask": "0.6000",
+          "depth": "10.00",
+          "opposite_bid": "0.4000",
+          "side": "NO",
+          "summary_after": "0.6000",
+          "summary_before": "0.6000"
+        }
+      ],
+      "requests": {
+        "after": {
+          "received_at": "2026-10-29T19:19:38.231917+00:00",
+          "request_started_at": "2026-10-29T19:19:38.102590+00:00",
+          "url": "https://external-api.kalshi.com/trade-api/v2/markets/KXSOL15M-26OCT291530-30"
+        },
+        "before": {
+          "received_at": "2026-10-29T19:19:37.966124+00:00",
+          "request_started_at": "2026-10-29T19:19:37.790813+00:00",
+          "url": "https://external-api.kalshi.com/trade-api/v2/markets/KXSOL15M-26OCT291530-30"
+        },
+        "book": {
+          "received_at": "2026-10-29T19:19:38.100521+00:00",
+          "request_started_at": "2026-10-29T19:19:37.968924+00:00",
+          "url": "https://external-api.kalshi.com/trade-api/v2/markets/KXSOL15M-26OCT291530-30/orderbook"
+        }
+      },
+      "summary_after": {
+        "close_time": "2026-10-29T19:30:00Z",
+        "event_ticker": "KXSOL15M-26OCT291530",
+        "market_type": "binary",
+        "no_ask_dollars": "0.6000",
+        "notional_value_dollars": "1.0000",
+        "open_time": "2026-10-29T19:15:00Z",
+        "settlement_bounds_type": "default",
+        "status": "active",
+        "ticker": "KXSOL15M-26OCT291530-30",
+        "yes_ask_dollars": "0.4100"
+      },
+      "summary_before": {
+        "close_time": "2026-10-29T19:30:00Z",
+        "event_ticker": "KXSOL15M-26OCT291530",
+        "market_type": "binary",
+        "no_ask_dollars": "0.6000",
+        "notional_value_dollars": "1.0000",
+        "open_time": "2026-10-29T19:15:00Z",
+        "settlement_bounds_type": "default",
+        "status": "active",
+        "ticker": "KXSOL15M-26OCT291530-30",
+        "yes_ask_dollars": "0.4100"
+      },
+      "ticker": "KXSOL15M-26OCT291530-30"
+    },
+    "KXWTI15M": {
+      "book": {
+        "orderbook_fp": {
+          "no_dollars": [
+            [
+              "0.4600",
+              "187.50"
+            ]
+          ],
+          "yes_dollars": [
+            [
+              "0.5200",
+              "128.33"
+            ]
+          ]
+        }
+      },
+      "observed_comparison": [
+        {
+          "book_ask": "0.5400",
+          "depth": "187.50",
+          "opposite_bid": "0.4600",
+          "side": "YES",
+          "summary_after": "0.5300",
+          "summary_before": "0.5300"
+        },
+        {
+          "book_ask": "0.4800",
+          "depth": "128.33",
+          "opposite_bid": "0.5200",
+          "side": "NO",
+          "summary_after": "0.4900",
+          "summary_before": "0.4900"
+        }
+      ],
+      "requests": {
+        "after": {
+          "received_at": "2026-10-29T19:19:38.230338+00:00",
+          "request_started_at": "2026-10-29T19:19:38.107140+00:00",
+          "url": "https://external-api.kalshi.com/trade-api/v2/markets/KXWTI15M-26OCT291530-30"
+        },
+        "before": {
+          "received_at": "2026-10-29T19:19:37.977466+00:00",
+          "request_started_at": "2026-10-29T19:19:37.798779+00:00",
+          "url": "https://external-api.kalshi.com/trade-api/v2/markets/KXWTI15M-26OCT291530-30"
+        },
+        "book": {
+          "received_at": "2026-10-29T19:19:38.106918+00:00",
+          "request_started_at": "2026-10-29T19:19:37.977692+00:00",
+          "url": "https://external-api.kalshi.com/trade-api/v2/markets/KXWTI15M-26OCT291530-30/orderbook"
+        }
+      },
+      "summary_after": {
+        "close_time": "2026-10-29T19:30:00Z",
+        "event_ticker": "KXWTI15M-26OCT291530",
+        "market_type": "binary",
+        "no_ask_dollars": "0.4900",
+        "notional_value_dollars": "1.0000",
+        "open_time": "2026-10-29T19:15:00Z",
+        "settlement_bounds_type": "default",
+        "status": "active",
+        "ticker": "KXWTI15M-26OCT291530-30",
+        "yes_ask_dollars": "0.5300"
+      },
+      "summary_before": {
+        "close_time": "2026-10-29T19:30:00Z",
+        "event_ticker": "KXWTI15M-26OCT291530",
+        "market_type": "binary",
+        "no_ask_dollars": "0.4900",
+        "notional_value_dollars": "1.0000",
+        "open_time": "2026-10-29T19:15:00Z",
+        "settlement_bounds_type": "default",
+        "status": "active",
+        "ticker": "KXWTI15M-26OCT291530-30",
+        "yes_ask_dollars": "0.5300"
+      },
+      "ticker": "KXWTI15M-26OCT291530-30"
+    }
+  },
+  "provenance": {
+    "authenticated": false,
+    "full_capture_sha256": "fcfc6f573ff97ddaae09d48c0d5eed03c864f97f52fe7dc18d262d4d62d3af2e",
+    "kind": "selected_captured_public_kalshi_market_and_book_fields",
+    "purpose": "Verify executable book prices can differ from separately fetched summary asks. Not retail UI payout evidence.",
+    "selection": "Only market identity/pricing/contract fields and each side's highest positive-quantity bid levels are retained. Every retained value is unchanged from the parsed public response."
+  }
+}

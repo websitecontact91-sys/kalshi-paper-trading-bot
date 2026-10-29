@@ -151,7 +151,8 @@ class LiveKalshiClient:
     def _snapshot(self, market, *, book=None, include_quotes=True, force_metadata=False):
         result = {'market': market, 'current': None, 'observation_time': None,
                   'compatible': False, 'compatibility_reason': 'not_evaluated',
-                  'quotes': {}, 'asks': {}, 'rejections': {},
+                  'quotes': {}, 'asks': {}, 'summary_asks': {}, 'ask_sources': {},
+                  'rejections': {},
                   'quote_ready': self.policy['ready'], 'quote_blocker': self.policy['reason'],
                   'quote_policy_mode': self.policy['mode']}
         series = market.get('series_ticker') or market['ticker'].split('-')[0]
@@ -165,9 +166,11 @@ class LiveKalshiClient:
             result['compatibility_reason'] = 'reference_or_metadata_unavailable:' + type(exc).__name__
         for side in ('YES', 'NO'):
             try:
-                result['asks'][side] = implied_ask(market, side)
+                result['summary_asks'][side] = implied_ask(market, side)
             except (ValueError, TypeError, ArithmeticError):
-                result['rejections'][side] = 'ask_unavailable'
+                # A summary is diagnostic only. The current book can still
+                # provide an executable price when this field is absent.
+                pass
         if not include_quotes:
             return result
         if not result['compatible']:
@@ -187,9 +190,12 @@ class LiveKalshiClient:
         except Exception as exc:
             result['rejections'] = {s: 'quote_data_unavailable:' + type(exc).__name__ for s in ('YES', 'NO')}
             return result
-        for side, ask in result['asks'].items():
+        for side in ('YES', 'NO'):
             try:
-                price, quantity = ask_and_depth(book, side, ask)
+                price, quantity = ask_and_depth(book, side)
+                result['asks'][side] = price
+                opposite = 'NO' if side == 'YES' else 'YES'
+                result['ask_sources'][side] = 'kalshi_orderbook:1-best_' + opposite + '_bid'
                 result['quotes'][side] = build_modeled_quote(price, quantity, metadata, event, market,
                     balance_precision=self.policy['balance_precision'], now=self.clock())
             except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
@@ -244,6 +250,7 @@ class LiveKalshiClient:
             results.append({'market': dict(old, status='unavailable'), 'current': None,
                 'observation_time': None, 'compatible': False,
                 'compatibility_reason': 'market_missing_from_refresh', 'quotes': {}, 'asks': {},
+                'summary_asks': {}, 'ask_sources': {},
                 'rejections': {s: 'market_missing_from_refresh' for s in ('YES', 'NO')},
                 'quote_ready': False, 'quote_blocker': 'market_missing_from_refresh',
                 'quote_policy_mode': self.policy['mode']})

@@ -37,8 +37,13 @@ def implied_ask(market, side):
     return Decimal(value) / 100
 
 
-def ask_and_depth(book, side, reported_ask):
-    """Derive the executable ask from the opposite bid at ONE price level."""
+def ask_and_depth(book, side, reported_ask=None):
+    """Derive the executable ask and depth from ONE opposite-bid price level.
+
+    An explicit reported_ask optionally checks a caller's same-snapshot
+    expectation. Live pricing omits it because separately fetched market
+    summaries and order books need not describe the same price snapshot.
+    """
     opposite = 'no' if side == 'YES' else 'yes' if side == 'NO' else None
     if opposite is None:
         raise ValueError('unknown side')
@@ -56,7 +61,7 @@ def ask_and_depth(book, side, reported_ask):
         raise ValueError('no_depth')
     best = max(p for p, _ in levels)
     ask = Decimal('1') - best
-    if ask != decimal_value(reported_ask):
+    if reported_ask is not None and ask != decimal_value(reported_ask):
         raise ValueError('quote_changed')
     return ask, sum((q for p, q in levels if p == best), Decimal('0'))
 

@@ -373,7 +373,7 @@ def record_void(state, *, verified=False, settled_at=None):
 
 
 LEDGER_FIELDS = ["session_id", "event_id", "round_key", "ticker", "side", "index_time",
-                 "entered_at", "seconds_to_close", "ask", "probability", "probability_field", "current",
+                 "entered_at", "seconds_to_close", "ask", "probability", "probability_field", "summary_ask", "current",
                  "underlying", "target", "distance_pct", "budget", "debit", "fees",
                  "quantity", "unused_cash", "payout", "exact_multiplier",
                  "displayed_multiplier", "quote_source", "quote_policy_mode", "quote_policy_ready",

@@ -12,7 +12,7 @@ import pytest
 import live_client
 from live_client import LiveKalshiClient, quote_policy
 from quote_adapter import NORMALIZED_SCHEMA, build_modeled_quote
-from selection import Candidate, eligible
+from selection import Candidate, eligible, rejection_reason
 from state_store import canonical_round_key
 from timing import round_key
 
@@ -199,6 +199,81 @@ def test_configured_api_mode_produces_eligible_quote_from_live_adapter(adapter):
     assert details.source == "documented_fee_model"
     assert details.ui_parity_verified is False
     assert details.principal + details.fees == details.quote.debit <= D("5.00")
+
+
+@pytest.mark.parametrize("summary_ask,book_ask,expected_reason", [
+    ("0.87", "0.91", "ask_out_of_band"),
+    ("0.79", "0.87", None),
+    (None, "0.87", None),
+])
+def test_executable_book_price_controls_eligibility_not_market_summary(
+        adapter, summary_ask, book_ask, expected_reason):
+    client, api, _, _ = adapter
+    client.policy = quote_policy(configured_api_policy())
+    if summary_ask is None:
+        api.current.pop("yes_ask_dollars")
+    else:
+        api.current["yes_ask_dollars"] = summary_ask
+    api.book["orderbook_fp"]["no_dollars"] = [[str(D("1") - D(book_ask)), "100"]]
+    snapshot = client.snapshot(api.current)
+    details = snapshot["quotes"]["YES"]
+    candidate = Candidate(api.current["ticker"], "YES", snapshot["asks"]["YES"],
+                          snapshot["current"], D("100.00"), details.quote, True)
+    assert snapshot["asks"]["YES"] == D(book_ask)
+    assert snapshot["ask_sources"]["YES"] == "kalshi_orderbook:1-best_NO_bid"
+    assert snapshot["summary_asks"].get("YES") == (D(summary_ask) if summary_ask else None)
+    assert details.principal == details.quantity * D(book_ask)
+    assert rejection_reason(candidate) == expected_reason
+    assert "YES" not in snapshot["rejections"]
+
+
+def test_final_revalidation_recomputes_from_changed_book_despite_unchanged_summary(adapter):
+    client, api, _, _ = adapter
+    client.policy = quote_policy(configured_api_policy())
+    original = copy.deepcopy(api.current)
+    initial = client.batch_snapshots([original])[0]
+    assert initial["asks"]["YES"] == D("0.87")
+    api.book["orderbook_fp"]["no_dollars"] = [["0.09", "100"]]
+    final = client.snapshot(original)
+    candidate = Candidate(api.current["ticker"], "YES", final["asks"]["YES"],
+                          final["current"], D("100.00"), final["quotes"]["YES"].quote, True)
+    assert final["summary_asks"]["YES"] == initial["summary_asks"]["YES"] == D("0.87")
+    assert final["asks"]["YES"] == D("0.91")
+    assert rejection_reason(candidate) == "ask_out_of_band"
+    assert api.calls["market"] == 1 and api.calls["orderbook"] == 1
+
+
+def test_both_sides_use_their_opposite_book_bid_and_no_depth_never_uses_summary(adapter):
+    client, api, _, _ = adapter
+    snapshot = client.snapshot(api.current)
+    assert snapshot["asks"] == {"YES": D("0.87"), "NO": D("0.14")}
+    assert snapshot["ask_sources"] == {
+        "YES": "kalshi_orderbook:1-best_NO_bid", "NO": "kalshi_orderbook:1-best_YES_bid"}
+    api.book["orderbook_fp"]["no_dollars"] = []
+    missing = client.snapshot(api.current)
+    assert missing["summary_asks"]["YES"] == D("0.87")
+    assert "YES" not in missing["asks"] and "YES" not in missing["quotes"]
+    assert missing["rejections"]["YES"] == "quote_unavailable:no_depth"
+    assert missing["asks"]["NO"] == D("0.14")
+
+
+@pytest.mark.parametrize("series", ["KXBTC15M", "KXSOL15M", "KXWTI15M"])
+def test_captured_public_responses_use_book_prices_when_summaries_disagree(adapter, series):
+    path = Path(__file__).parent / "fixtures" / "live_summary_book_20261029.json"
+    case = json.loads(path.read_text())["cases"][series]
+    client, api, _, _ = adapter
+    client.policy = quote_policy(configured_api_policy())
+    api.current, api.book = case["summary_before"], case["book"]
+    snapshot = client.snapshot(api.current)
+    for observed in case["observed_comparison"]:
+        side = observed["side"]
+        assert snapshot["summary_asks"][side] == D(observed["summary_before"])
+        assert snapshot["asks"][side] == D(observed["book_ask"])
+        details = snapshot["quotes"][side]
+        assert details.principal == details.quantity * snapshot["asks"][side]
+        assert details.quantity <= D(observed["depth"])
+        assert details.quote.debit <= D("5.00")
+        assert side not in snapshot["rejections"]
 
 
 @pytest.mark.parametrize("problem", ["stale", "incompatible", "missing_fees", "no_depth"])

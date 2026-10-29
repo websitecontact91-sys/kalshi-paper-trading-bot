@@ -164,7 +164,8 @@ def test_configured_api_paper_quotes_enter_and_settle_without_ui_capture(tmp_pat
         'market_type': 'binary', 'notional_value_dollars': '1.0000',
         'settlement_bounds_type': 'default', 'strike_type': 'greater_or_equal',
         'floor_strike': '100', 'status': 'active', 'open_time': close - 900,
-        'close_time': close, 'yes_ask_dollars': '0.87', 'no_ask_dollars': '0.14',
+        # The independent market summary differs from the executable book.
+        'close_time': close, 'yes_ask_dollars': '0.79', 'no_ask_dollars': '0.14',
     }
     book = {'orderbook_fp': {'no_dollars': [['0.13', '100.00']],
                              'yes_dollars': [['0.86', '100.00']]}}
@@ -235,6 +236,9 @@ def test_configured_api_paper_quotes_enter_and_settle_without_ui_capture(tmp_pat
     assert trade['quote_policy_ready'] is True
     assert trade['quote_policy_mode'] == 'documented_api'
     assert 'quote_policy_verified' not in trade
+    assert trade['probability_field'] == 'kalshi_orderbook:1-best_NO_bid'
+    assert D(trade['ask']) == D('0.87')
+    assert D(trade['summary_ask']) == D('0.79')
     assert D(trade['payout']) == D('5.69')
     assert trade['displayed_multiplier'] == '1.14'
     assert D('0') < D(trade['debit']) <= D('5')

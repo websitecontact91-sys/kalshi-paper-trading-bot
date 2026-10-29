@@ -219,9 +219,11 @@ class PaperEngine:
                         'close_time': snapshot['market']['close_time'], 'index_time': snapshot['observation_time'],
                         'entered_at': iso(entry_now), 'seconds_to_close': seconds_to_close(snapshot['market']['close_time'], entry_now),
                         'ask': str(chosen.ask), 'probability': str(chosen.ask),
-                        'probability_field': (chosen.side.lower() + '_ask_dollars'
+                        'probability_field': snapshot.get('ask_sources', {}).get(chosen.side) or (chosen.side.lower() + '_ask_dollars'
                             if chosen.side.lower() + '_ask_dollars' in snapshot['market']
                             else chosen.side.lower() + '_ask'),
+                        'summary_ask': (str(snapshot['summary_asks'][chosen.side])
+                            if chosen.side in snapshot.get('summary_asks', {}) else None),
                         'current': str(chosen.current), 'target': str(chosen.target),
                         'distance_pct': str(distance_pct(chosen)), 'source_sha': self.source,
                         'quote_policy_ready': bool(snapshot['quote_ready']),
