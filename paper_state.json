@@ -1,5 +1,5 @@
 {
-  "balance": "997.8913",
+  "balance": "996.8974",
   "history": [
     {
       "ask": "0.9",
@@ -351,8 +351,52 @@
   "migration": {
     "from_version": 1
   },
-  "mode": "SCANNING",
-  "pending": null,
+  "mode": "WAITING_FOR_SETTLEMENT",
+  "pending": {
+    "ask": "0.8800",
+    "budget": "1.00",
+    "close_time": "2026-10-29T21:30:00Z",
+    "current": "0.70320000",
+    "debit": "0.9939",
+    "displayed_multiplier": "1.13",
+    "distance_pct": "0.01990502459692325191230414878",
+    "entered_at": "2026-10-29T21:29:10.414291+00:00",
+    "event_id": "legacy-c2dd93b0165313d96d6574cd:1992566",
+    "exact_multiplier": "1.126873930978971727537981688",
+    "fees": "0.008300",
+    "index_time": 1793309350.0,
+    "payout": "1.12",
+    "principal": "0.985600",
+    "probability": "0.8800",
+    "probability_field": "kalshi_orderbook:1-best_YES_bid",
+    "quantity": "1.12",
+    "quote_evidence": {
+      "balance_precision": "0.0001",
+      "balance_precision_basis": "explicit_model_input",
+      "fee_multiplier": "1",
+      "fee_rounding_url": "https://docs.kalshi.com/getting_started/fee_rounding",
+      "fee_schedule_url": "https://kalshi.com/docs/kalshi-fee-schedule.pdf",
+      "fee_type": "quadratic",
+      "fee_waived": false,
+      "fill_assumption": "single_equivalent_taker_fill_at_one_price_level",
+      "quantity_increment": "0.01",
+      "quantity_source_url": "https://docs.kalshi.com/getting_started/fixed_point_migration"
+    },
+    "quote_policy_mode": "documented_api",
+    "quote_policy_ready": true,
+    "quote_source": "documented_fee_model",
+    "round_id": "1992566",
+    "round_key": "1992566",
+    "seconds_to_close": 49.58570861816406,
+    "series_ticker": "KXAUDUSD15M",
+    "side": "NO",
+    "source_sha": "5bcc14b405d1d52f420d18a27a43c491b796c232",
+    "summary_ask": "0.8800",
+    "target": "0.70334",
+    "ticker": "KXAUDUSD15M-26OCT291730-30",
+    "ui_parity_verified": false,
+    "unused_cash": "0.0061"
+  },
   "round_reports": [
     {
       "code_fingerprint": "git-tree-state-excluded-v1:sha256:3e38edb51a94d92bff659bc61abef1fb5f87b7b52f7206754804c06d3594580b",
@@ -1634,7 +1678,8 @@
     "1992561",
     "1992562",
     "1992563",
-    "1992564"
+    "1992564",
+    "1992566"
   ],
   "schema": 1,
   "session_id": "legacy-c2dd93b0165313d96d6574cd",
