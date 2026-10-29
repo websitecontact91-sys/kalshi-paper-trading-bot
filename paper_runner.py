@@ -119,9 +119,13 @@ class KalshiCFPrices:
         self.key_id = key_id
         self.key = serialization.load_pem_private_key(pem.encode(), password=None)
         self.session = requests.Session()
+        self.cache = {}
 
     def price(self, series):
         index_id = CF_INDEX_IDS[series]
+        cached = self.cache.get(index_id)
+        if cached and -5 <= time.time() - cached[1] <= 8:
+            return cached
         path = '/trade-api/v2/cfbenchmarks/values'
         stamp = str(int(time.time() * 1000))
         message = (stamp + 'GET' + path).encode()
@@ -156,6 +160,7 @@ class KalshiCFPrices:
         ts, px = max(valid)
         if not -5 <= time.time() - ts <= 15:
             raise ValueError('Stale CF observation for ' + index_id)
+        self.cache[index_id] = (px, ts)
         return px, ts
 
 
@@ -207,7 +212,7 @@ def evaluate_market(m, px, current_time, book, balance):
         close = parse_time(m['close_time'])
         if close is None or not 0 < close - current_time <= 60:
             return []
-        if target <= 0 or not math.isfinite(px) or px <= 0 or m.get('status') != 'open':
+        if target <= 0 or not math.isfinite(px) or px <= 0 or m.get('status') not in ('open', 'active'):
             return []
         if m.get('strike_type') != 'greater_or_equal':
             return []
