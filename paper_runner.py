@@ -38,7 +38,7 @@ CF_INDEX_IDS = {
     'KXXRP15M': 'XRPUSD_RTI',
     'KXZEC15M': 'ZECUSD_RTI',
 }
-FEE_RESERVE_PER_SHARE = 0.10  # Paper estimate, not Kalshi's verified fee.
+TRADE_NOTIONAL = 5.0  # Exact fixed-dollar hypothetical paper stake; fractional exposure, not executable contracts.
 
 
 def parse_time(value):
@@ -227,15 +227,14 @@ def evaluate_market(m, px, current_time, book, balance):
             depth = best_bid_depth(book, side, ask)
             if depth < 1:
                 continue
-            budget = min(5.0, balance)
-            count = min(int(depth), math.floor((budget + 1e-8) /
-                                              (ask + FEE_RESERVE_PER_SHARE)))
-            if count < 1:
+            # Fixed $5 paper notional. Kalshi real orders require whole contracts;
+            # this fractional exposure is a mathematical simulation only.
+            # No unverified fees are deducted.
+            if balance + 1e-8 < TRADE_NOTIONAL:
                 continue
-            fee = round(count * FEE_RESERVE_PER_SHARE, 8)
-            cost = round(count * ask + fee, 8)
-            if cost > budget + 1e-8:
-                continue
+            count = TRADE_NOTIONAL / ask
+            cost = TRADE_NOTIONAL
+            fee = 0.0
             signed = px - target if side == 'YES' else target - px
             if signed <= 0:
                 continue  # A negative distance means this side is currently losing.
@@ -263,7 +262,7 @@ def settle(state, client):
                  trade['ticker'], market.get('status'), result)
         return False
     won = result == trade['side'].lower()
-    payout = trade['count'] if won else 0.0
+    payout = round(trade['count'], 8) if won else 0.0
     trade.update(result=result, won=won,
                  pnl=round(payout - trade['cost'], 8), settled_at=time.time())
     state['balance'] = round(state['balance'] + payout, 8)
@@ -291,8 +290,8 @@ def loop(args):
     cached_markets = []
     next_discovery = 0.0
     LOG.warning('REFERENCE COVERAGE mapped_cf=%d mapped_pyth=%d excluded_unmapped=5', len(CF_INDEX_IDS), len(PYTH_INDEX_IDS))
-    LOG.warning('NO REAL ORDERS. Mode=%s; estimated fee reserve $%.2f/share',
-                'PAPER' if args.paper else 'READ ONLY', FEE_RESERVE_PER_SHARE)
+    LOG.warning('NO REAL ORDERS. Mode=%s; fixed $%.2f paper notional; fractional simulated exposure; fees excluded',
+                'PAPER' if args.paper else 'READ ONLY', TRADE_NOTIONAL)
     while time.monotonic() - started < args.duration:
         tick = time.monotonic()
         if state['mode'] == 'WAITING_FOR_SETTLEMENT':
