@@ -240,3 +240,39 @@ def test_closed_market_still_ineligible():
     m['status'] = 'closed'
     with patch('paper_runner.best_bid_depth', return_value=20):
         assert evaluate_market(m, 105, 1893456845.0, orderbook(), 1000) == []
+
+
+def test_exact_five_dollar_fractional_paper_notional():
+    """The simulator spends exactly $5, not a $5 cap minus invented fees."""
+    with patch('paper_runner.best_bid_depth', return_value=20):
+        trades = evaluate_market(market(yes_ask=0.86), 105, 1893456845.0, orderbook(), 1000)
+    assert len(trades) == 1
+    trade = trades[0]
+    assert trade['cost'] == 5.0
+    assert trade['fee_reserve'] == 0.0
+    assert abs(trade['count'] - 5.0 / 0.86) < 1e-10
+    assert trade['count'] != int(trade['count'])  # Hypothetical fractional exposure.
+
+
+def test_exact_five_dollar_paper_win_and_loss():
+    with patch('paper_runner.best_bid_depth', return_value=20):
+        trade = evaluate_market(market(yes_ask=0.86), 105, 1893456845.0, orderbook(), 1000)[0]
+    class Outcome:
+        def __init__(self, result):
+            self.result = result
+        def market(self, ticker):
+            return {'result': self.result}
+    win = default_state()
+    win['balance'] -= 5.0
+    win['trade'] = trade.copy()
+    win['mode'] = 'WAITING_FOR_SETTLEMENT'
+    assert settle(win, Outcome('yes'))
+    assert win['balance'] == round(995.0 + 5.0 / 0.86, 8)
+    assert win['mode'] == 'SCANNING'
+    loss = default_state()
+    loss['balance'] -= 5.0
+    loss['trade'] = trade.copy()
+    loss['mode'] = 'WAITING_FOR_SETTLEMENT'
+    assert settle(loss, Outcome('no'))
+    assert loss['balance'] == 995.0
+    assert loss['mode'] == 'STOPPED'
