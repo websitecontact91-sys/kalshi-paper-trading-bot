@@ -175,3 +175,11 @@ def test_loss_stops_even_if_balance_remains():
     assert state['mode'] == 'STOPPED'
     assert state['balance'] == 995.25
     assert state['history'][0]['pnl'] == -4.75
+
+
+def test_freshness_at_selection():
+    from paper_runner import candidate_is_fresh
+    assert candidate_is_fresh({'index_time': 100}, 110)
+    assert not candidate_is_fresh({'index_time': 100}, 116)
+    assert not candidate_is_fresh({'index_time': 100}, 94)
+    assert not candidate_is_fresh({}, 110)
