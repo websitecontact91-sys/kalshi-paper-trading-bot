@@ -2,6 +2,10 @@
 name: Kalshi 15-minute paper trading
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main.yml'
   workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
