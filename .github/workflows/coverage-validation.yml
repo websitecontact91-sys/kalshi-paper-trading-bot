@@ -1,0 +1,25 @@
+name: Validate all-market coverage changes
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check syntax
+        run: python -m py_compile market_coverage.py discover.py paper_runner.py
+      - name: Run offline tests
+        run: python -m pytest -q test_market_coverage.py test_paper_decisions.py
