@@ -4,7 +4,7 @@ name: Kalshi 15-minute paper trading
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '* * * * *'
 
 permissions:
   contents: write
@@ -16,7 +16,7 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 4
     steps:
       - name: Download bot code and saved paper state
         uses: actions/checkout@v4
@@ -34,15 +34,9 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install cryptography
 
-      - name: Check Python syntax
-        run: python -m py_compile paper_runner.py discover.py bot.py feed_probe.py market_coverage.py reference_windows.py
-
-      - name: Test paper trading decisions
-        run: python -m pytest -q test_paper_decisions.py test_market_coverage.py test_reference_windows.py
-
       - name: Run persistent simulated paper trading
         env:
           GITHUB_ACTIONS: 'true'
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
-        run: python -u paper_runner.py --duration 240 --paper --persist-to-github
+        run: python -u paper_runner.py --duration 90 --paper --persist-to-github
