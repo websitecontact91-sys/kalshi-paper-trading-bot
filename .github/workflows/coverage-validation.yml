@@ -1,0 +1,86 @@
+name: Validate all-market coverage changes
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install cryptography
+      - name: Check syntax
+        run: python -m py_compile market_coverage.py discover.py paper_runner.py reference_windows.py
+      - name: Run offline tests
+        run: python -m pytest -q test_market_coverage.py test_paper_decisions.py test_reference_windows.py
+
+  live-market-inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install runtime dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Enumerate currently open 15-minute markets and feed gaps
+        run: timeout 240s python -u market_coverage.py > market-coverage.json
+      - name: Show discovered coverage
+        if: always()
+        run: |
+          if [ -f market-coverage.json ]; then cat market-coverage.json; fi
+      - name: Inspect official series settlement metadata
+        run: timeout 240s python -u settlement_source_audit.py > settlement-sources.json
+      - name: Show settlement metadata
+        if: always()
+        run: |
+          if [ -f settlement-sources.json ]; then cat settlement-sources.json; fi
+      - name: Retain settlement metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: settlement-sources
+          path: settlement-sources.json
+          if-no-files-found: ignore
+      - name: Retain coverage inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-coverage
+          path: market-coverage.json
+          if-no-files-found: ignore
+
+  kalshi-paper-dry-run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install cryptography
+      - name: Exercise paper runner without writing state
+        run: python -u paper_runner.py --duration 30
+        env:
+          KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}

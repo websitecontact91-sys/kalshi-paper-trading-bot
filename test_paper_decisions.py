@@ -98,3 +98,131 @@ def test_stopped_state_survives_restart(tmp_path):
     path.write_text(json.dumps(state))
     restored = load_state(path)
     assert restored['mode'] == 'STOPPED'
+
+
+def test_losing_side_is_never_selected():
+    m = market(yes_ask=0.85, no_ask=0.15)
+    with patch('paper_runner.best_bid_depth', return_value=20):
+        assert evaluate_market(m, 95, 1893456845.0, orderbook(), 1000) == []
+
+
+def test_no_side_can_qualify_at_exact_strike():
+    m = market(yes_ask=0.85, no_ask=0.85)
+    with patch('paper_runner.best_bid_depth', return_value=20):
+        assert evaluate_market(m, 100, 1893456845.0, orderbook(), 1000) == []
+
+
+def test_global_round_id_groups_nearby_close_times():
+    from paper_runner import round_id
+    assert round_id('2030-01-01T00:15:00Z') == round_id('2030-01-01T00:14:59Z')
+    assert round_id('2030-01-01T00:15:01Z') != round_id('2030-01-01T00:15:00Z')
+
+
+def test_evaluated_trade_has_global_round_id():
+    from paper_runner import round_id
+    with patch('paper_runner.best_bid_depth', return_value=20):
+        trades = evaluate_market(market(), 105, 1893456845.0, orderbook(), 1000)
+    assert trades[0]['round_id'] == round_id(market()['close_time'])
+
+
+def test_win_credits_payout_and_resumes_scanning():
+    state = default_state()
+    state['balance'] = 995.25
+    state['mode'] = 'WAITING_FOR_SETTLEMENT'
+    state['trade'] = {'ticker': 'TEST', 'side': 'YES',
+                      'count': 5, 'cost': 4.75, 'round_id': '10'}
+
+    class Client:
+        def market(self, ticker):
+            return {'result': 'yes'}
+
+    assert settle(state, Client()) is True
+    assert state['mode'] == 'SCANNING'
+    assert state['trade'] is None
+    assert state['balance'] == 1000.25
+    assert state['history'][0]['won'] is True
+
+
+def test_unsettled_market_preserves_pending_position():
+    state = default_state()
+    state['balance'] = 995.25
+    state['mode'] = 'WAITING_FOR_SETTLEMENT'
+    state['trade'] = {'ticker': 'TEST', 'side': 'YES',
+                      'count': 5, 'cost': 4.75}
+
+    class Client:
+        def market(self, ticker):
+            return {'result': ''}
+
+    assert settle(state, Client()) is False
+    assert state['mode'] == 'WAITING_FOR_SETTLEMENT'
+    assert state['balance'] == 995.25
+    assert state['history'] == []
+
+
+def test_loss_stops_even_if_balance_remains():
+    state = default_state()
+    state['balance'] = 995.25
+    state['mode'] = 'WAITING_FOR_SETTLEMENT'
+    state['trade'] = {'ticker': 'TEST', 'side': 'NO',
+                      'count': 5, 'cost': 4.75}
+
+    class Client:
+        def market(self, ticker):
+            return {'result': 'yes'}
+
+    assert settle(state, Client()) is True
+    assert state['mode'] == 'STOPPED'
+    assert state['balance'] == 995.25
+    assert state['history'][0]['pnl'] == -4.75
+
+
+def test_freshness_at_selection():
+    from paper_runner import candidate_is_fresh
+    assert candidate_is_fresh({'index_time': 100}, 110)
+    assert not candidate_is_fresh({'index_time': 100}, 116)
+    assert not candidate_is_fresh({'index_time': 100}, 94)
+    assert not candidate_is_fresh({}, 110)
+
+
+def test_legacy_round_id_cannot_bypass_global_limit():
+    from paper_runner import prior_round_matches, round_id
+    close = '2030-01-01T00:15:00Z'
+    assert prior_round_matches({'round_id': close}, close)
+    assert prior_round_matches({'round_id': round_id(close)}, close)
+    assert prior_round_matches({'close_time': close}, close)
+    assert not prior_round_matches({'round_id': '2030-01-01T00:30:00Z'}, close)
+
+
+def test_complete_paper_lifecycle_win_then_loss(tmp_path):
+    from paper_runner import persist
+    state = default_state()
+    state['balance'] = 995.25
+    state['mode'] = 'WAITING_FOR_SETTLEMENT'
+    state['trade'] = {'ticker': 'ROUND1', 'side': 'YES', 'count': 5,
+                      'cost': 4.75, 'round_id': '1'}
+    path = tmp_path / 'state.json'
+    persist(state, path)
+    restored = load_state(path)
+
+    class Results:
+        def __init__(self, outcome):
+            self.outcome = outcome
+
+        def market(self, ticker):
+            return {'result': self.outcome}
+
+    assert not settle(restored, Results(''))
+    assert restored['mode'] == 'WAITING_FOR_SETTLEMENT'
+    assert settle(restored, Results('yes'))
+    assert restored['mode'] == 'SCANNING'
+    assert restored['balance'] == 1000.25
+
+    restored['balance'] -= 4.75
+    restored['mode'] = 'WAITING_FOR_SETTLEMENT'
+    restored['trade'] = {'ticker': 'ROUND2', 'side': 'YES', 'count': 5,
+                         'cost': 4.75, 'round_id': '2'}
+    assert settle(restored, Results('no'))
+    persist(restored, path)
+    assert load_state(path)['mode'] == 'STOPPED'
+    assert len(restored['history']) == 2
