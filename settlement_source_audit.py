@@ -22,6 +22,8 @@ def main():
                 if series.get(field) is not None:
                     item[field] = series[field]
             item['metadata_fields'] = sorted(series.keys())
+            item['exchange_index'] = series.get('exchange_index')
+            item['product_metadata'] = series.get('product_metadata')
         except Exception as exc:
             item['error'] = type(exc).__name__ + ': ' + str(exc)
         output['series'].append(item)
