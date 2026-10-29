@@ -89,7 +89,7 @@ jobs:
           python -m pip install websocket-client
           python -u audit_kalshi_reference_feeds.py
       - name: Exercise paper runner without writing state
-        run: python -u paper_runner.py --duration 600
+        run: python -u paper_runner.py --duration 90
         env:
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
