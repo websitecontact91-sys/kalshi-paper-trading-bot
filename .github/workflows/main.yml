@@ -47,6 +47,17 @@ jobs:
           print('Saved paper mode:', mode)
           PY
 
+      - name: Archive stopped session before disabling workflow
+        if: steps.state.outputs.stopped == 'true'
+        shell: bash
+        run: |
+          python archive_paper_session.py
+          git add paper_sessions/
+          if ! git diff --cached --quiet; then
+            git -c user.name='Kalshi Paper Bot' -c user.email='paper-bot@users.noreply.github.com' commit -m 'Archive stopped simulated paper session'
+            git push origin HEAD:main
+          fi
+
       - name: Disable scheduled workflow after permanent stop
         if: steps.state.outputs.stopped == 'true'
         env:
@@ -76,3 +87,14 @@ jobs:
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
         run: python -u paper_runner.py --duration 600 --interval 2 --paper --persist-to-github
+
+      - name: Archive paper session if the runner stopped after a loss
+        if: steps.state.outputs.stopped == 'false' && success()
+        shell: bash
+        run: |
+          python archive_paper_session.py
+          git add paper_sessions/
+          if ! git diff --cached --quiet; then
+            git -c user.name='Kalshi Paper Bot' -c user.email='paper-bot@users.noreply.github.com' commit -m 'Archive stopped simulated paper session'
+            git push origin HEAD:main
+          fi
