@@ -26,6 +26,7 @@ jobs:
       - name: Queue next run (keeps the chain alive)
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: gh workflow run main.yml --ref main
 
       - name: Download bot code and saved paper state
