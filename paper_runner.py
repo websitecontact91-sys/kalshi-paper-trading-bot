@@ -285,6 +285,7 @@ def loop(args):
     started = time.monotonic()
     cached_markets = []
     next_discovery = 0.0
+    LOG.warning('REFERENCE COVERAGE mapped_cf=%d mapped_pyth=%d excluded_unmapped=5', len(CF_INDEX_IDS), len(PYTH_INDEX_IDS))
     LOG.warning('NO REAL ORDERS. Mode=%s; estimated fee reserve $%.2f/share',
                 'PAPER' if args.paper else 'READ ONLY', FEE_RESERVE_PER_SHARE)
     while time.monotonic() - started < args.duration:
@@ -324,6 +325,7 @@ def loop(args):
                     if series not in price_cache:
                         price_cache[series] = (cf.price(series) if series in CF_INDEX_IDS else pyth.price(series))
                     px, ts = price_cache[series]
+                    LOG.debug('REFERENCE_OK series=%s value=%s age=%.2fs', series, px, time.time()-ts)
                     fresh = client.market(m['ticker'])
                     book = client.orderbook(m['ticker'])
                     for candidate in evaluate_market(fresh, px, time.time(), book, state['balance']):
