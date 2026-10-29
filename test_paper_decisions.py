@@ -123,3 +123,55 @@ def test_evaluated_trade_has_global_round_id():
     with patch('paper_runner.best_bid_depth', return_value=20):
         trades = evaluate_market(market(), 105, 1893456845.0, orderbook(), 1000)
     assert trades[0]['round_id'] == round_id(market()['close_time'])
+
+
+def test_win_credits_payout_and_resumes_scanning():
+    state = default_state()
+    state['balance'] = 995.25
+    state['mode'] = 'WAITING_FOR_SETTLEMENT'
+    state['trade'] = {'ticker': 'TEST', 'side': 'YES',
+                      'count': 5, 'cost': 4.75, 'round_id': '10'}
+
+    class Client:
+        def market(self, ticker):
+            return {'result': 'yes'}
+
+    assert settle(state, Client()) is True
+    assert state['mode'] == 'SCANNING'
+    assert state['trade'] is None
+    assert state['balance'] == 1000.25
+    assert state['history'][0]['won'] is True
+
+
+def test_unsettled_market_preserves_pending_position():
+    state = default_state()
+    state['balance'] = 995.25
+    state['mode'] = 'WAITING_FOR_SETTLEMENT'
+    state['trade'] = {'ticker': 'TEST', 'side': 'YES',
+                      'count': 5, 'cost': 4.75}
+
+    class Client:
+        def market(self, ticker):
+            return {'result': ''}
+
+    assert settle(state, Client()) is False
+    assert state['mode'] == 'WAITING_FOR_SETTLEMENT'
+    assert state['balance'] == 995.25
+    assert state['history'] == []
+
+
+def test_loss_stops_even_if_balance_remains():
+    state = default_state()
+    state['balance'] = 995.25
+    state['mode'] = 'WAITING_FOR_SETTLEMENT'
+    state['trade'] = {'ticker': 'TEST', 'side': 'NO',
+                      'count': 5, 'cost': 4.75}
+
+    class Client:
+        def market(self, ticker):
+            return {'result': 'yes'}
+
+    assert settle(state, Client()) is True
+    assert state['mode'] == 'STOPPED'
+    assert state['balance'] == 995.25
+    assert state['history'][0]['pnl'] == -4.75
