@@ -42,9 +42,15 @@ def test_requested_schedule_duration_and_single_writer_are_preserved():
     assert "--report-dir runtime_reports" in run["run"]
 
 
-def test_live_deployment_is_disabled_and_account_verification_cannot_submit_orders():
+def test_live_configuration_is_explicit_and_account_verification_cannot_submit_orders():
+    from live_runner import LiveSettings, settings
     config = json.loads((ROOT / 'live_config.json').read_text())
-    assert config['enabled'] is False
+    # Deployment activation is an owner-controlled value. Testing that the
+    # mutable file is always false would make every authorized run fail its
+    # own pre-execution test suite. Defaults and runtime gates stay disabled.
+    assert LiveSettings().enabled is False
+    assert isinstance(config['enabled'], bool)
+    assert settings(ROOT / 'live_config.json').enabled is config['enabled']
     assert config['max_total_cost_usd'] == '1.00'
     doc = workflow('live-readiness.yml')
     assert doc['permissions'] == {'contents': 'read'}

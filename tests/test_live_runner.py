@@ -391,7 +391,8 @@ def test_inspection_balance_outage_cannot_restart_a_stopped_journal(
     assert transport.closed
 
 
-def test_default_main_uses_only_authenticated_get_and_does_not_initialize_state(tmp_path, monkeypatch):
+@pytest.mark.parametrize('enabled', [False, True])
+def test_default_main_uses_only_authenticated_get_and_does_not_initialize_state(tmp_path, monkeypatch, enabled):
     class Response:
         status_code, headers = 200, {}
         def __init__(self, value):
@@ -418,10 +419,11 @@ def test_default_main_uses_only_authenticated_get_and_does_not_initialize_state(
     monkeypatch.setattr(live_runner, 'LiveBroker', factory)
     monkeypatch.setattr(live_runner, 'LiveStore', lambda *a, **kw: pytest.fail('Preflight touched live state'))
     report_dir = tmp_path / 'reports'
-    assert live_runner.main(['--config', str(config_file(tmp_path, enabled=True)),
+    assert live_runner.main(['--config', str(config_file(tmp_path, enabled=enabled)),
                              '--report-dir', str(report_dir)]) == 0
     assert len(transport.calls) == 4 and transport.closed
     report = json.loads((report_dir / 'preflight.json').read_text())
+    assert report['live_enabled'] is enabled
     assert report['writes_enabled'] is False and report['real_order_execution_tested'] is False
     assert report['account']['available_balance_usd'] == '19.8499'
     assert report['minimum_available_cash_usd'] == '1.00'

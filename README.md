@@ -101,6 +101,21 @@ The live workflow's manual default is `preflight`. Its `initialize` operation cr
 
 Those production activation controls are intentionally left off in this implementation. The repository contains no automatic switch from paper to real money. Offline tests use mocked orders and account responses; no real order placement or real-money end-to-end settlement is claimed. The owner must initiate and supervise any eventual exchange execution test separately.
 
+### Manual first live session
+
+A manually started live session uses real money. It is separate from recurring activation: keep the repository variable `KALSHI_LIVE_SCHEDULE_ENABLED` explicitly `false` so a manual session cannot queue successors and scheduled live jobs remain disabled. The current `run` mode executes the normal strategy for 600 seconds; it is not an explicit one-trade-only mode. It can finish without a trade when no eligible market appears, and it continues scanning after settlement while its time and available funds permit. A strict one-order test would require an additional durable attempt limit.
+
+The owner-controlled sequence is:
+
+1. In repository Settings > Secrets and variables > Actions > Variables, set `KALSHI_LIVE_SCHEDULE_ENABLED` to `false`.
+2. In Actions > Live trading - disabled until owner activation, use Run workflow on `main` with mode `initialize` once. This creates the separate live journal without placing an order. Existing journals cannot be reset this way.
+3. Run the same workflow with mode `preflight` and review the account, exchange and available-funds report. This also cannot place an order.
+4. If proceeding, the owner changes `live_config.json` to `enabled: true`, retaining the $1 fee-inclusive budget and all other settings. The test suite accepts either explicit activation value while separately verifying disabled defaults and confirmation requirements.
+5. The owner starts mode `run` on `main` with confirmation `I_ACCEPT_REAL_MONEY_TRADES`. This step can submit real orders under the strategy rules. Recurring execution must remain disabled for a single manually started session.
+6. Inspect `live_state.json` on the separate `live-state` branch and the run's diagnostics for actual order IDs, attributed fills, charged fees and settlement. A green workflow alone does not prove that any order executed.
+7. After the session, the owner can restore `enabled: false` to block future order-submitting runs. Changing repository configuration does not interrupt an already-running checkout.
+8. If a position is still pending, mode `reconcile` checks it without submitting new orders and remains available with live execution disabled. It performs one pass, so repeat it later if the official settlement is not yet available.
+
 Primary API references for the separate live implementation:
 
 - [V2 order creation](https://docs.kalshi.com/api-reference/orders/create-order-v2)
