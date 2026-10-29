@@ -98,3 +98,15 @@ def test_stopped_state_survives_restart(tmp_path):
     path.write_text(json.dumps(state))
     restored = load_state(path)
     assert restored['mode'] == 'STOPPED'
+
+
+def test_losing_side_is_never_selected():
+    m = market(yes_ask=0.85, no_ask=0.15)
+    with patch('paper_runner.best_bid_depth', return_value=20):
+        assert evaluate_market(m, 95, 1893456845.0, orderbook(), 1000) == []
+
+
+def test_no_side_can_qualify_at_exact_strike():
+    m = market(yes_ask=0.85, no_ask=0.85)
+    with patch('paper_runner.best_bid_depth', return_value=20):
+        assert evaluate_market(m, 100, 1893456845.0, orderbook(), 1000) == []
