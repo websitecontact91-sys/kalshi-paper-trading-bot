@@ -37,6 +37,9 @@ jobs:
       - name: Check Python syntax
         run: python -m py_compile paper_runner.py discover.py bot.py feed_probe.py
 
+      - name: Test paper trading decisions
+        run: python -m pytest -q test_paper_decisions.py
+
       - name: Diagnose all 15-minute market price feeds
         env:
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
