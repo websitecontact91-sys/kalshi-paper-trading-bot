@@ -1,0 +1,6 @@
+{
+  "balance_precision": null,
+  "ui_parity_verified": false,
+  "evidence_file": null,
+  "note": "The original SOL API quote and account balance precision were not supplied. Arithmetic fixtures are explicitly synthetic. Paper entries remain blocked until a genuine read-only quote capture verifies fee and UI parity; monitoring and controlled simulations remain available."
+}

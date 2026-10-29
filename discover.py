@@ -195,7 +195,7 @@ def run_cli(argv=None):
     ):
         p.error('Invalid limits')
 
-    from bot import Kalshi
+    from kalshi_client import Kalshi
 
     stats = {}
     print('KALSHI 15-MINUTE DISCOVERY - READ ONLY', flush=True)

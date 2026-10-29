@@ -1,0 +1,12 @@
+{
+  "budget": "5.00",
+  "debit": "5.00",
+  "payout": "5.69",
+  "displayed_multiplier": "1.14",
+  "provenance": {
+    "kind": "screenshot_accounting_example",
+    "captured_response": false,
+    "ui_parity_verified": false,
+    "source_note": "Owner supplied a SOL screenshot showing a $5 input, Pays $5.69 and 1.14x. Raw quote, executable ask, exact debit breakdown, quantity and account precision were not captured. These are the requested accounting-example inputs, not a real Kalshi API response."
+  }
+}

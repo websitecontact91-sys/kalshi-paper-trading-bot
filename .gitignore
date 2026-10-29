@@ -1,0 +1,7 @@
+__pycache__/
+.pytest_cache/
+.venv/
+runtime_reports/
+universe_report.csv
+universe_report.json
+*.tmp

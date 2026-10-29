@@ -1,428 +1,326 @@
-
-"""Kalshi 15-minute multi-market paper simulator; NEVER places real orders.
-All discovered series are scanned and classified. Only series with verified
-settlement-reference feeds can be evaluated; unsupported ones fail closed.
-"""
+"""Persistent paper simulation. Live I/O is read-only Kalshi market data."""
+from __future__ import annotations
 import argparse
-import base64
+import copy
 import datetime as dt
 import json
 import logging
-import math
 import os
 from pathlib import Path
 import subprocess
 import time
+from typing import Protocol
 
-import requests
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ed25519, padding
-from bot import Kalshi, implied_ask, best_bid_depth
-from discover import discover_open, discover_series
-from market_coverage import classification
-from kalshi_pyth import KalshiPythPrices, PYTH_INDEX_IDS
+from payout_quote import as_decimal
+from persistence import persist
+from selection import Candidate, distance_pct, rank, rejection_reason
+from state_store import (archive_and_reset, can_enter, load, record_entry,
+                         record_settlement, record_void, validate)
+from timing import in_entry_window, observation_fresh, round_key, seconds_to_close
+from universe import UNIVERSE, series_of
 
 LOG = logging.getLogger('paper_runner')
-BASE = 'https://api.elections.kalshi.com/trade-api/v2'
-STATE_FILE = Path('paper_state.json')
-CF_INDEX_IDS = {
-    'KXBTC15M': 'BRTI',
-    'KXETH15M': 'ETHUSD_RTI',
-    'KXSOL15M': 'SOLUSD_RTI',
-    'KXHYPE15M': 'HYPEUSD_RTI',
-    'KXADA15M': 'ADAUSD_RTI',
-    'KXBCH15M': 'BCHUSD_RTI',
-    'KXBNB15M': 'BNBUSD_RTI',
-    'KXDOGE15M': 'DOGEUSD_RTI',
-    'KXNEAR15M': 'NEARUSD_RTI',
-    'KXXRP15M': 'XRPUSD_RTI',
-    'KXZEC15M': 'ZECUSD_RTI',
-}
-TRADE_NOTIONAL = 5.0  # Exact dollar-denominated paper stake; never places real orders.
 
 
-def parse_time(value):
-    if isinstance(value, (int, float)):
-        return float(value)
-    if not value:
-        return None
-    return dt.datetime.fromisoformat(str(value).replace('Z', '+00:00')).timestamp()
+class KalshiClient(Protocol):
+    def discover(self, now=None): ...
+    def batch_snapshots(self, markets, now=None, include_quotes=True, final_window=False): ...
+    def snapshot(self, market, now=None, include_quotes=True): ...
+    def official_market(self, ticker): ...
+    def close(self): ...
 
 
-def default_state():
-    return {'mode': 'SCANNING', 'balance': 1000.0, 'trade': None,
-            'history': [], 'version': 1}
+def iso(stamp):
+    return dt.datetime.fromtimestamp(stamp, dt.timezone.utc).isoformat()
 
 
-def load_state(path=STATE_FILE):
-    if not path.exists():
-        return default_state()
-    state = json.loads(path.read_text(encoding='utf-8'))
-    if state.get('mode') not in ('SCANNING', 'WAITING_FOR_SETTLEMENT', 'STOPPED'):
-        raise ValueError('Invalid saved mode')
-    if state['mode'] == 'WAITING_FOR_SETTLEMENT' and not state.get('trade'):
-        raise ValueError('Pending paper trade missing')
-    if state['mode'] != 'WAITING_FOR_SETTLEMENT' and state.get('trade'):
-        raise ValueError('Unexpected pending paper trade')
-    if not isinstance(state.get('history'), list):
-        raise ValueError('Invalid history')
-    if any(t.get('won') is False for t in state['history']) and state['mode'] != 'STOPPED':
-        raise ValueError('Prior loss requires permanent STOPPED mode')
-    balance = state.get('balance')
-    if not isinstance(balance, (float, int)) or not math.isfinite(balance) or balance < 0:
-        raise ValueError('Invalid balance')
-    return state
+def source_sha():
+    if os.environ.get('PAPER_SOURCE_SHA'):
+        return os.environ['PAPER_SOURCE_SHA']
+    return subprocess.run(['git', 'rev-parse', 'HEAD'], check=True, text=True,
+                          capture_output=True).stdout.strip()
 
 
-def persist(state, path=STATE_FILE, push=False):
-    tmp = path.with_suffix('.tmp')
-    tmp.write_text(json.dumps(state, indent=2, sort_keys=True) + '\n', encoding='utf-8')
-    tmp.replace(path)
-    if push:
-        subprocess.run(['git', 'add', '--', str(path)], check=True)
-        diff = subprocess.run(['git', 'diff', '--cached', '--quiet'], check=False)
-        if diff.returncode == 1:
-            subprocess.run(['git', '-c', 'user.name=Kalshi Paper Bot',
-                            '-c', 'user.email=paper-bot@users.noreply.github.com',
-                            'commit', '-m', 'Save simulated Kalshi trading state'], check=True)
-            subprocess.run(['git', 'push', 'origin', 'HEAD:main'], check=True)
-        elif diff.returncode != 0:
-            raise RuntimeError('Cannot verify saved state')
+class PaperEngine:
+    def __init__(self, client: KalshiClient, state, *, persist_state, paper=False,
+                 clock=time.time, source='unknown', report_dir=None):
+        validate(state)
+        self.client, self.state, self.persist_state = client, copy.deepcopy(state), persist_state
+        self.paper, self.clock, self.source = paper, clock, source
+        self.report_dir = Path(report_dir) if report_dir else None
+        if self.report_dir:
+            self.report_dir.mkdir(parents=True, exist_ok=True)
+        self.started_at = self.clock()
+        self.first_scan, self.last_scan = None, None
+        self.rounds, self.events = {}, []
+        self._last_messages = {}
 
+    def _emit(self, kind, **fields):
+        event = {'kind': kind, 'timestamp': iso(self.clock()), 'source_sha': self.source, **fields}
+        self.events.append(event)
+        LOG.info('%s %s', kind, json.dumps(fields, sort_keys=True, default=str))
+        if self.report_dir:
+            with (self.report_dir / 'events.jsonl').open('a') as f:
+                f.write(json.dumps(event, sort_keys=True, default=str) + '\n')
 
-def discover(client):
-    series, catalog = discover_series(client, max_pages=10)
-    if not catalog.get('series_complete'):
-        raise RuntimeError('Incomplete series catalog: ' + str(catalog))
-    stats = {}
-    markets = discover_open(client, max_pages=10, page_size=200,
-                            series_tickers=series, stats=stats)
-    if stats.get('failed_series') or stats.get('truncated_series'):
-        raise RuntimeError('Incomplete market discovery: ' + str(stats))
-    groups = {}
-    for m in markets:
-        name = m.get('series_ticker') or m.get('ticker', '').split('-')[0]
-        groups.setdefault(classification(name), set()).add(name)
-    LOG.info('DISCOVERY series=%d markets=%d', len(series), len(markets))
-    for kind, names in sorted(groups.items()):
-        LOG.info('COVERAGE %s series=%d names=%s',
-                 kind, len(names), ', '.join(sorted(names)))
-    return markets
+    def _commit(self, updated, kind, **fields):
+        receipt = self.persist_state(updated)
+        self.state = updated
+        self._emit(kind, **fields, balance=self.state['balance'], mode=self.state['mode'],
+                   persistence=receipt)
 
+    def _round(self, key):
+        return self.rounds.setdefault(key, {'round_key': key, 'final_window_scanned': False,
+            'close_time': iso(int(key) * 900), 'scan_count': 0, 'reason': 'monitor_only',
+            'rejections': {}, 'entry': None})
 
-class KalshiCFPrices:
-    def __init__(self):
-        key_id = os.environ.get('KALSHI_API_KEY_ID', '')
-        pem = os.environ.get('KALSHI_PRIVATE_KEY', '')
-        if not key_id or not pem:
-            raise RuntimeError('Kalshi price-feed GitHub secrets missing')
-        self.key_id = key_id
-        self.key = serialization.load_pem_private_key(pem.encode(), password=None)
-        self.session = requests.Session()
-        self.cache = {}
+    def _reject(self, key, ticker, side, reason):
+        self._round(key)['rejections'][ticker + ':' + side] = reason
 
-    def price(self, series):
-        index_id = CF_INDEX_IDS[series]
-        cached = self.cache.get(index_id)
-        if cached and -5 <= time.time() - cached[1] <= 8:
-            return cached
-        path = '/trade-api/v2/cfbenchmarks/values'
-        stamp = str(int(time.time() * 1000))
-        message = (stamp + 'GET' + path).encode()
-        if isinstance(self.key, ed25519.Ed25519PrivateKey):
-            signature = self.key.sign(message)
-        else:
-            signature = self.key.sign(message, padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=hashes.SHA256().digest_size), hashes.SHA256())
-        response = self.session.get('https://external-api.kalshi.com' + path,
-                                    params={'id': index_id}, headers={
-                                        'KALSHI-ACCESS-KEY': self.key_id,
-                                        'KALSHI-ACCESS-TIMESTAMP': stamp,
-                                        'KALSHI-ACCESS-SIGNATURE': base64.b64encode(signature).decode(),
-                                    }, timeout=12)
-        response.raise_for_status()
-        payload = response.json().get('data', {}).get('payload')
-        if not isinstance(payload, list):
-            raise ValueError('Invalid CF response for ' + index_id)
-        valid = []
-        for point in payload:
-            try:
-                px = float(point['value'])
-                raw_ts = float(point['time'])
-                ts = raw_ts / 1000 if raw_ts > 1e11 else raw_ts
-                if math.isfinite(px) and px > 0 and math.isfinite(ts):
-                    valid.append((ts, px))
-            except (KeyError, ValueError, TypeError, OverflowError):
-                continue
-        if not valid:
-            raise ValueError('No valid CF observations for ' + index_id)
-        ts, px = max(valid)
-        if not -5 <= time.time() - ts <= 15:
-            raise ValueError('Stale CF observation for ' + index_id)
-        self.cache[index_id] = (px, ts)
-        return px, ts
-
-
-def round_id(close_time):
-    """Canonical UTC 15-minute closing bucket across all market series.
-
-    A market closing exactly on a quarter-hour belongs to that quarter-hour;
-    nearby close timestamps in the same bucket share one global trade slot.
-    """
-    stamp = parse_time(close_time)
-    if stamp is None or not math.isfinite(stamp):
-        raise ValueError('Invalid round close time')
-    return str(math.ceil(stamp / 900))
-
-
-def prior_round_matches(trade, close_time):
-    """Support both legacy ISO close_time and new numeric round identifiers.
-
-    Older saved paper_state.json entries used raw ISO timestamps as round_id.
-    Never allow that older format to bypass the one-trade-per-round rule.
-    """
-    raw = trade.get('round_id') or trade.get('close_time')
-    if raw is None:
-        return False
-    try:
-        return round_id(raw) == round_id(close_time) if isinstance(raw, str) and ('T' in raw or '-' in raw) else str(raw) == round_id(close_time)
-    except (ValueError, TypeError, OverflowError):
-        return False
-
-
-def candidate_is_fresh(candidate, now, max_age=15):
-    """Reject stale reference quotes before simulated execution."""
-    ts = candidate.get('index_time')
-    if not isinstance(ts, (int, float)) or not math.isfinite(ts):
-        return False
-    return -5 <= now - ts <= max_age
-
-
-def choose(candidates):
-    if not candidates:
-        return None
-    return sorted(candidates, key=lambda c: (-c['distance_pct'],
-                  -c['gross_payout'], c['ticker'], c['side']))[0]
-
-
-def fee_inclusive_quote(ask, fee_multiplier):
-    """Estimate $5 dollar-ticket payout from published Kalshi taker fee formula.
-
-    Fractional dollar exposure is PAPER ONLY. Round fees to cents per ticket.
-    A Kalshi on-screen quote may differ due to rounding, spread or fee rules.
-    """
-    if not (0 < ask < 1) or not math.isfinite(fee_multiplier) or fee_multiplier < 0:
-        raise ValueError('Invalid quote inputs')
-    # Solve the whole-ticket budget constraint with fee rounded UP to cents.
-    # Round down exposure to cents of contract payout, never spend > $5.
-    for payout_cents in range(int(TRADE_NOTIONAL / ask * 100), 0, -1):
-        payout = payout_cents / 100
-        fee = math.ceil((0.07 * fee_multiplier * payout * ask * (1 - ask)) * 100 - 1e-10) / 100
-        if payout * ask + fee <= TRADE_NOTIONAL + 1e-9:
-            return payout, fee
-    raise ValueError('No affordable paper payout')
-
-
-def series_fee_multiplier(client, series):
-    """Fail closed if Kalshi does not return fee parameters for this series."""
-    from urllib.parse import quote
-    payload = client.get('/series/' + quote(series, safe=''))
-    data = payload.get('series', {})
-    raw = data.get('fee_multiplier')
-    if raw is None:
-        raise ValueError('Missing live Kalshi fee_multiplier for ' + series)
-    multiplier = float(raw)
-    if not math.isfinite(multiplier) or multiplier < 0:
-        raise ValueError('Invalid live Kalshi fee multiplier for ' + series)
-    return multiplier
-
-
-def evaluate_market(m, px, current_time, book, balance):
-    try:
-        target = float(m['floor_strike'])
-        close = parse_time(m['close_time'])
-        if close is None or not 0 < close - current_time <= 60:
+    def _candidates(self, snapshot, now):
+        market = snapshot['market']
+        try:
+            key = round_key(market['close_time'])
+        except (ValueError, KeyError, TypeError):
+            self._emit('INVALID_MARKET_TIME', ticker=market.get('ticker'))
             return []
-        if target <= 0 or not math.isfinite(px) or px <= 0 or m.get('status') not in ('open', 'active'):
-            return []
-        if m.get('strike_type') != 'greater_or_equal':
-            return []
-        options = []
+        coverage = self._round(key)
+        coverage['scan_count'] += 1
+        coverage['last_scan_at'] = iso(now)
+        coverage.setdefault('first_scan_at', iso(now))
+        window = in_entry_window(market['close_time'], now)
+        coverage['final_window_scanned'] |= window
+        result = []
         for side in ('YES', 'NO'):
-            ask = implied_ask(m, side)
-            if ask is None or not 0.80 <= ask <= 0.90:
-                continue
-            fee_multiplier = m.get('_kalshi_series_fee_multiplier')
-            if fee_multiplier is None:
-                continue
-            payout, fee = fee_inclusive_quote(ask, float(fee_multiplier))
-            gross = payout / TRADE_NOTIONAL
-            if not 1.10 <= gross <= 1.20:
-                continue
-            depth = best_bid_depth(book, side, ask)
-            if depth < math.ceil(payout):
-                continue
-            # Fixed $5 paper notional with a conservative, fee-inclusive quote.
-            # This is a simulation, not an executable order or UI guarantee.
-            if balance + 1e-8 < TRADE_NOTIONAL:
-                continue
-            count = payout
-            cost = TRADE_NOTIONAL
-            signed = px - target if side == 'YES' else target - px
-            if signed <= 0:
-                continue  # A negative distance means this side is currently losing.
-            distance = 100 * signed / target
-            options.append({'ticker': m['ticker'], 'side': side, 'ask': ask,
-                            'payout_source': 'kalshi_published_fee_estimate',
-                            'gross_payout': gross, 'distance_pct': distance,
-                            'target': target, 'underlying': px, 'count': count,
-                            'cost': cost, 'fee_reserve': fee,
-                            'fee_multiplier': float(fee_multiplier),
-                            'close_time': m['close_time'], 'round_id': round_id(m['close_time'])})
-        return options
-    except (KeyError, ValueError, TypeError, ZeroDivisionError, OverflowError):
-        return []
-
-
-def settle(state, client):
-    trade = state['trade']
-    if not trade:
-        raise RuntimeError('Missing pending paper trade')
-    market = client.market(trade['ticker'])
-    # Never infer settlement from a price quote or a closed trading window.
-    # The official market result is the sole authority for simulated P&L.
-    result = str(market.get('result') or '').strip().lower()
-    if result not in ('yes', 'no'):
-        LOG.info('WAITING FOR OFFICIAL RESULT %s status=%s result=%r',
-                 trade['ticker'], market.get('status'), result)
-        return False
-    won = result == trade['side'].lower()
-    if won and trade.get('payout_source') and trade['payout_source'] != 'kalshi_published_fee_estimate':
-        raise ValueError('Unverified paper payout source')
-    payout = round(trade['cost'] * trade['gross_payout'], 8) if won and trade.get('payout_source') == 'kalshi_published_fee_estimate' else (round(trade['count'], 8) if won and 'payout_source' not in trade else 0.0)
-    trade.update(result=result, won=won,
-                 pnl=round(payout - trade['cost'], 8), settled_at=time.time())
-    state['balance'] = round(state['balance'] + payout, 8)
-    state['history'].append(trade)
-    state['trade'] = None
-    state['mode'] = 'SCANNING' if won else 'STOPPED'
-    LOG.warning('SETTLED %s won=%s mode=%s', trade['ticker'], won, state['mode'])
-    return True
-
-
-def loop(args):
-    client = Kalshi(BASE)
-    state = load_state()
-    if state['mode'] == 'STOPPED':
-        LOG.error('PERMANENT STOP: previous simulated loss')
-        return
-    if args.paper:
-        if not args.persist_to_github or not os.getenv('GITHUB_ACTIONS'):
-            raise RuntimeError('Paper mode requires GitHub Actions and state persistence')
-        if not STATE_FILE.exists():
-            persist(state, push=True)
-    cf = KalshiCFPrices()
-    pyth = KalshiPythPrices()
-    started = time.monotonic()
-    cached_markets = []
-    next_discovery = 0.0
-    fee_cache = {}
-    LOG.warning('REFERENCE COVERAGE mapped_cf=%d mapped_pyth=%d excluded_unmapped=5', len(CF_INDEX_IDS), len(PYTH_INDEX_IDS))
-    LOG.warning('NO REAL ORDERS. Mode=%s; fixed $%.2f paper notional; dollar-denominated simulated exposure; published taker fee estimate included',
-                'PAPER' if args.paper else 'READ ONLY', TRADE_NOTIONAL)
-    while time.monotonic() - started < args.duration:
-        tick = time.monotonic()
-        if state['mode'] == 'WAITING_FOR_SETTLEMENT':
-            if args.paper:
-                if settle(state, client):
-                    persist(state, push=True)
-                    if state['mode'] == 'STOPPED':
-                        return
+            reason = None
+            if market.get('status') not in ('open', 'active') or seconds_to_close(market['close_time'], now) <= 0:
+                reason = 'closed_or_unavailable'
+            elif not window:
+                reason = 'monitor_only_before_final_minute'
+            elif self.paper and not can_enter(self.state, key):
+                reason = 'round_already_traded_or_state_blocked'
+            elif not observation_fresh(snapshot.get('observation_time'), now):
+                reason = 'stale_or_missing_reference'
+            elif not snapshot.get('compatible'):
+                reason = 'incompatible:' + str(snapshot.get('compatibility_reason'))
             else:
-                LOG.info('READ ONLY: pending paper trade exists; settlement not changed')
-        else:
-            # A full /series + per-series market crawl is too slow to repeat
-            # every two seconds. Cache discovery for 60s, but refresh market
-            # details and orderbooks immediately before considering an entry.
-            if time.monotonic() >= next_discovery:
-                cached_markets = discover(client)
-                next_discovery = time.monotonic() + 60
-            markets = cached_markets
-            candidates = []
-            price_cache = {}
-            unsupported = {}
-            scan_counts = {'final_minute': 0, 'mapped': 0, 'reference_ok': 0, 'evaluated': 0, 'qualifying': 0}
-            for m in markets:
-                close = parse_time(m.get('close_time'))
-                if close is None or not 0 < close - time.time() <= 60:
-                    continue
-                scan_counts['final_minute'] += 1
-                if any(prior_round_matches(t, m['close_time']) for t in state['history']):
-                    continue
-                if state.get('trade') and str(state['trade'].get('round_id')) == round_id(m['close_time']):
-                    continue
-                series = m.get('series_ticker') or m['ticker'].split('-')[0]
-                if series not in CF_INDEX_IDS and series not in PYTH_INDEX_IDS:
-                    unsupported[series] = classification(series)
-                    continue
-                scan_counts['mapped'] += 1
-                try:
-                    if series not in price_cache:
-                        price_cache[series] = (cf.price(series) if series in CF_INDEX_IDS else pyth.price(series))
-                    px, ts = price_cache[series]
-                    LOG.debug('REFERENCE_OK series=%s value=%s age=%.2fs', series, px, time.time()-ts)
-                    scan_counts['reference_ok'] += 1
-                    fresh = client.market(m['ticker'])
-                    book = client.orderbook(m['ticker'])
-                    scan_counts['evaluated'] += 1
-                    if series not in fee_cache:
-                        fee_cache[series] = series_fee_multiplier(client, series)
-                    fresh['_kalshi_series_fee_multiplier'] = fee_cache[series]
-                    options = evaluate_market(fresh, px, time.time(), book, state['balance'])
-                    scan_counts['qualifying'] += len(options)
-                    if not options:
-                        LOG.info('ENTRY_FILTERED series=%s ticker=%s status=%s strike_type=%s strike=%s yes_ask=%s no_ask=%s seconds_left=%.1f', series, m.get('ticker'), fresh.get('status'), fresh.get('strike_type'), fresh.get('floor_strike'), fresh.get('yes_ask_dollars'), fresh.get('no_ask_dollars'), (parse_time(fresh.get('close_time')) or 0)-time.time())
-                    for candidate in options:
-                        candidate['index_time'] = ts
-                        candidates.append(candidate)
-                except Exception as exc:
-                    LOG.warning('CANNOT EVALUATE %s: %s', m.get('ticker'), exc)
-            if unsupported:
-                LOG.info('FINAL-MINUTE UNSUPPORTED %s',
-                         ', '.join('%s:%s' % pair for pair in sorted(unsupported.items())))
-            candidates = [c for c in candidates if candidate_is_fresh(c, time.time())]
-            selected = choose(candidates)
-            if selected:
-                LOG.info('SELECT %s %s distance=%.5f%% ask=%.3f gross=%.3fx cost=%.2f',
-                         selected['ticker'], selected['side'], selected['distance_pct'],
-                         selected['ask'], selected['gross_payout'], selected['cost'])
-                if args.paper:
-                    state['trade'] = dict(selected, entered_at=time.time())
-                    state['balance'] = round(state['balance'] - selected['cost'], 8)
-                    state['mode'] = 'WAITING_FOR_SETTLEMENT'
-                    persist(state, push=True)
-                    LOG.warning('PAPER ENTRY SAVED %s', selected['ticker'])
+                quote = snapshot.get('quotes', {}).get(side)
+                ask = snapshot.get('asks', {}).get(side)
+                if ask is None or quote is None:
+                    reason = snapshot.get('rejections', {}).get(side, 'quote_unavailable')
                 else:
-                    LOG.info('READ ONLY: simulated entry disabled')
-            else:
-                LOG.info('SCAN discovered_markets=%d candidates=0 mode=%s stages=%s',
-                         len(markets), state['mode'], scan_counts)
-        time.sleep(max(0, args.interval - (time.monotonic() - tick)))
+                    try:
+                        candidate = Candidate(market['ticker'], side, ask, snapshot['current'],
+                                              as_decimal(market['floor_strike']), quote.quote, True)
+                        reason = rejection_reason(candidate)
+                        if reason is None and not snapshot.get('quote_ready', False):
+                            reason = snapshot.get('quote_blocker') or 'quote_evidence_unverified'
+                        if reason is None:
+                            result.append((candidate, snapshot, quote))
+                    except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
+                        reason = 'invalid_candidate:' + type(exc).__name__
+            self._reject(key, market['ticker'], side, reason or 'eligible')
+        coverage['reason'] = 'candidates_eligible' if result else 'no_eligible_candidate'
+        if not window and seconds_to_close(market['close_time'], now) > 0:
+            coverage['reason'] = 'monitor_only'
+        return result
+
+    def _settle(self):
+        pending = self.state['pending']
+        try:
+            market = self.client.official_market(pending['ticker'])
+        except Exception as exc:
+            self._emit('SETTLEMENT_PENDING', ticker=pending['ticker'], reason=type(exc).__name__)
+            return
+        if market.get('ticker') != pending['ticker']:
+            self._emit('SETTLEMENT_PENDING', ticker=pending['ticker'], reason='market_identity_mismatch')
+            return
+        status, result = market.get('status'), str(market.get('result') or '').lower()
+        updated = copy.deepcopy(self.state)
+        if result in ('yes', 'no') and status in ('settled', 'finalized'):
+            won = record_settlement(updated, result, settled_at=iso(self.clock()))
+            self._commit(updated, 'PAPER_SETTLEMENT', ticker=pending['ticker'], result=result,
+                         won=won, pnl=updated['history'][-1]['pnl'])
+        elif status in ('cancelled', 'canceled', 'voided') and result in ('', 'void', 'cancelled', 'canceled'):
+            record_void(updated, verified=True, settled_at=iso(self.clock()))
+            self._commit(updated, 'PAPER_VOID_REFUND', ticker=pending['ticker'], result='VOID', pnl='0.00')
+        else:
+            self._emit('SETTLEMENT_PENDING', ticker=pending['ticker'], status=status, result=result)
+
+    def tick(self):
+        if self.paper and self.state['mode'] == 'STOPPED':
+            return 'STOPPED'
+        now = self.clock()
+        self.first_scan = now if self.first_scan is None else self.first_scan
+        self.last_scan = now
+        if self.paper and self.state['pending'] is not None:
+            waiting = self._round(str(int(now // 900) + 1))
+            waiting['reason'] = ('entry_recorded_waiting_for_settlement' if waiting['entry']
+                                 else 'waiting_for_settlement')
+            self._settle()
+            return self.state['mode']
+        try:
+            markets = self.client.discover(now)
+            in_window = any(in_entry_window(m['close_time'], now) for m in markets)
+            snapshots = self.client.batch_snapshots(markets, now, include_quotes=True, final_window=in_window)
+        except Exception as exc:
+            key = str(int(now // 900) + 1)
+            self._round(key)['reason'] = 'scan_failed:' + type(exc).__name__
+            self._emit('SCAN_FAILED', reason=type(exc).__name__)
+            return self.state['mode']
+        completed = self.clock()
+        self.last_scan = completed
+        key_now = str(int(completed // 900) + 1)
+        seen_series = {series_of(m) for m in markets}
+        for series in UNIVERSE.keys() - seen_series:
+            reason = getattr(self.client, 'discovery_errors', {}).get(series, 'no_markets')
+            self._reject(key_now, series, '*', reason)
+        if not markets:
+            row = self._round(key_now)
+            row['reason'] = 'no_markets'
+            row['final_window_scanned'] |= in_entry_window(int(key_now) * 900, completed)
+        choices = []
+        for snapshot in snapshots:
+            choices.extend(self._candidates(snapshot, completed))
+        lookup = {(c.ticker, c.side): (c, snap, quote) for c, snap, quote in choices}
+        ordered = rank([c for c, _, _ in choices])
+        if ordered and not self.paper:
+            self._emit('READ_ONLY_CANDIDATE', ticker=ordered[0].ticker, side=ordered[0].side)
+        if self.paper:
+            for candidate in ordered:
+                _, snapshot, _ = lookup[(candidate.ticker, candidate.side)]
+                market = snapshot['market']
+                key = round_key(market['close_time'])
+                if not in_entry_window(market['close_time'], self.clock()):
+                    self._reject(key, candidate.ticker, candidate.side, 'expired_during_processing')
+                    continue
+                try:
+                    fresh = self.client.snapshot(market, self.clock(), include_quotes=True)
+                    if fresh['market']['ticker'] != candidate.ticker:
+                        self._reject(key, candidate.ticker, candidate.side, 'market_identity_mismatch')
+                        continue
+                    refreshed = self._candidates(fresh, self.clock())
+                    found = next((item for item in refreshed if item[0].side == candidate.side), None)
+                    if found is None:
+                        continue
+                    chosen, snapshot, detail = found
+                    entry_now = self.clock()
+                    key = round_key(snapshot['market']['close_time'])
+                    if (not in_entry_window(snapshot['market']['close_time'], entry_now)
+                            or not observation_fresh(snapshot['observation_time'], entry_now)
+                            or not can_enter(self.state, key)):
+                        self._reject(key, chosen.ticker, chosen.side, 'expired_or_stale_at_entry')
+                        continue
+                    if detail.quote.debit > as_decimal(self.state['balance']):
+                        self._reject(key, chosen.ticker, chosen.side, 'insufficient_paper_cash')
+                        continue
+                    trade = {**detail.ledger_fields(), 'ticker': chosen.ticker, 'side': chosen.side,
+                        'series_ticker': series_of(snapshot['market']), 'round_key': key,
+                        'close_time': snapshot['market']['close_time'], 'index_time': snapshot['observation_time'],
+                        'entered_at': iso(entry_now), 'seconds_to_close': seconds_to_close(snapshot['market']['close_time'], entry_now),
+                        'ask': str(chosen.ask), 'probability': str(chosen.ask),
+                        'probability_field': (chosen.side.lower() + '_ask_dollars'
+                            if chosen.side.lower() + '_ask_dollars' in snapshot['market']
+                            else chosen.side.lower() + '_ask'),
+                        'current': str(chosen.current), 'target': str(chosen.target),
+                        'distance_pct': str(distance_pct(chosen)), 'source_sha': self.source,
+                        'quote_policy_verified': bool(snapshot['quote_ready'])}
+                except Exception as exc:
+                    self._reject(key, candidate.ticker, candidate.side, 'revalidation_failed:' + type(exc).__name__)
+                    continue
+                updated = copy.deepcopy(self.state)
+                record_entry(updated, key, trade)
+                self._commit(updated, 'PAPER_ENTRY', ticker=chosen.ticker, side=chosen.side,
+                    round_key=key, debit=trade['debit'], payout=trade['payout'], seconds_to_close=trade['seconds_to_close'])
+                row = self._round(key)
+                row.update(reason='entry_recorded', entry={'ticker': chosen.ticker, 'side': chosen.side})
+                break
+        self._summaries()
+        return self.state['mode']
+
+    def _summaries(self):
+        for key, row in sorted(self.rounds.items()):
+            fingerprint = (json.dumps(row['rejections'], sort_keys=True) + row['reason']
+                           + str(row['final_window_scanned']))
+            if self._last_messages.get(key) != fingerprint:
+                self._emit('ROUND_SUMMARY', **row)
+                self._last_messages[key] = fingerprint
+
+    def finish(self, *, persist_audit=True, failure=None):
+        self._summaries()
+        coverage = {'source_sha': self.source, 'run_id': os.environ.get('GITHUB_RUN_ID'),
+            'scan_started_at': iso(self.first_scan) if self.first_scan is not None else None,
+            'scan_ended_at': iso(self.last_scan) if self.last_scan is not None else None,
+            'rounds': list(self.rounds.values()),
+            'readiness_blockers': getattr(self.client, 'readiness_reasons', []),
+            'paper': self.paper, 'mode': self.state['mode'], 'failure': failure}
+        if self.report_dir:
+            (self.report_dir / 'coverage.json').write_text(json.dumps(coverage, indent=2, sort_keys=True) + '\n')
+        if self.paper and self.rounds and persist_audit:
+            updated = copy.deepcopy(self.state)
+            updated.setdefault('round_reports', []).append(coverage)
+            self._commit(updated, 'ROUND_AUDIT_SAVED', round_count=len(self.rounds))
+        return coverage
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--duration', type=float, default=600)
     parser.add_argument('--interval', type=float, default=2)
-    parser.add_argument('--duration', type=int, default=240)
     parser.add_argument('--paper', action='store_true')
     parser.add_argument('--persist-to-github', action='store_true')
-    args = parser.parse_args()
-    if args.interval < 2 or not 1 <= args.duration <= 600:
-        parser.error('interval must be >= 2; duration must be 1-600 seconds')
+    parser.add_argument('--state', default='paper_state.json')
+    parser.add_argument('--report-dir', default='runtime_reports')
+    parser.add_argument('--quote-policy', default='quote_policy.json')
+    parser.add_argument('--new-session', action='store_true')
+    parser.add_argument('--confirm-reset', action='store_true')
+    args = parser.parse_args(argv)
+    if not 0 < args.duration <= 600 or not 0 < args.interval <= 60:
+        parser.error('duration must be (0,600] seconds and interval (0,60] seconds')
+    if args.persist_to_github and (not args.paper or os.environ.get('GITHUB_ACTIONS') != 'true'):
+        parser.error('GitHub persistence requires --paper and the existing Actions environment')
+    if args.confirm_reset != args.new_session or (args.new_session and not args.paper):
+        parser.error('a reset requires --paper --new-session --confirm-reset together')
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-    loop(args)
+    sha = source_sha()
+    state_path = Path(args.state)
+    archives = []
+    if args.new_session:
+        _, archived = archive_and_reset(state_path, confirm=True)
+        archives.append(archived)
+    state = load(state_path)
+    if args.paper and state['mode'] == 'STOPPED':
+        LOG.info('STOPPED: persisted loss stop; explicit archive/reset required for a new session')
+        return 0
+    def save(updated):
+        return persist(updated, state_path, push=args.persist_to_github, source_sha=sha, extra_paths=archives)
+    if args.new_session:
+        save(state)
+    from live_client import LiveKalshiClient
+    client = LiveKalshiClient(args.quote_policy)
+    engine = PaperEngine(client, state, persist_state=save, paper=args.paper, source=sha, report_dir=args.report_dir)
+    engine._emit('SCAN_START', duration=args.duration, interval=args.interval, paper=args.paper,
+                 readiness_blockers=client.readiness_reasons, initial_mode=state['mode'], balance=state['balance'])
+    deadline = time.monotonic() + args.duration
+    try:
+        while time.monotonic() < deadline:
+            cycle = time.monotonic()
+            if engine.tick() == 'STOPPED' and args.paper:
+                break
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(remaining, max(0.0, args.interval - (time.monotonic() - cycle))))
+        engine.finish()
+    except Exception as exc:
+        try:
+            engine.finish(persist_audit=False, failure=type(exc).__name__)
+        except Exception:
+            LOG.error('Could not write failure coverage report')
+        raise
+    finally:
+        client.close()
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

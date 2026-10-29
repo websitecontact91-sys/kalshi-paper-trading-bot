@@ -12,27 +12,10 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, padding
 
 LOG = logging.getLogger(__name__)
-PYTH_INDEX_IDS = {
-    "KXGOLD15M": "Metal.Index.1OZGOLD/USD",
-    "KXSILVER15M": "Metal.Index.SILVER/USD",
-    "KXBRENT15M": "Commodities.Index.BRENT/USD",
-    "KXCOPPER15M": "Commodities.Index.CU/USD",
-    "KXNATGAS15M": "Commodities.Index.NATGAS/USD",
-    "KXPALLADIUM15M": "Metal.XPD/USD",
-    "KXPLATINUM15M": "Metal.XPT/USD",
-    "KXWTI15M": "Commodities.Index.WTI1M/USD",
-    "KXEURUSD15M": "FX.EUR/USD",
-    "KXGBPUSD15M": "FX.GBP/USD",
-    "KXAUDUSD15M": "FX.AUD/USD",
-    "KXUSDCAD15M": "FX.USD/CAD",
-    "KXUSDJPY15M": "FX.USD/JPY",
-    "KXUSDMXN15M": "FX.USD/MXN",
-    "KX2YRRATE15M": "InterestRate.US2Y",
-    "KX5YRRATE15M": "InterestRate.US5Y",
-    "KX10YRRATE15M": "InterestRate.US10Y",
-    "KX30YRRATE15M": "InterestRate.US30Y",
-    "KXDJIA15M": "Equity.Index.US30/USD",
-}
+from universe import PYTH_INDEX_IDS
+from kalshi_client import decimal_value
+from timing import observation_fresh
+
 # Mapping is only a candidate; contract denomination and settlement must also match.
 # No direct Pyth credentials or network connection is used.
 
@@ -42,7 +25,7 @@ class KalshiPythPrices:
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
-        self.thread.start()
+        self.thread.start() if os.environ.get('KALSHI_API_KEY_ID') and os.environ.get('KALSHI_PRIVATE_KEY') else None
 
     @staticmethod
     def _headers():
@@ -69,11 +52,11 @@ class KalshiPythPrices:
                     "channels": ["pyth_value"], "underlying_tickers": sorted(set(PYTH_INDEX_IDS.values()))}}))
                 while not self.stop_event.is_set():
                     try:
-                        event = json.loads(ws.recv())
+                        event = json.loads(ws.recv(), parse_float=str)
                     except websocket.WebSocketTimeoutException:
                         continue
                     if event.get("type") == "error":
-                        raise RuntimeError(str(event.get("msg")))
+                        raise RuntimeError('Kalshi streaming subscription error')
                     if event.get("type") != "pyth_value":
                         continue
                     msg = event.get("msg") or {}
@@ -81,16 +64,16 @@ class KalshiPythPrices:
                     if key not in PYTH_INDEX_IDS.values():
                         continue
                     try:
-                        value = float(msg["value_usd"])
+                        value = decimal_value(msg["value_usd"])
                         timestamp = float(msg["source_ts_ms"]) / 1000
-                    except (KeyError, ValueError, TypeError):
+                    except (KeyError, ValueError, TypeError, ArithmeticError):
                         continue
-                    if math.isfinite(value) and value > 0 and math.isfinite(timestamp):
+                    if value.is_finite() and value > 0 and math.isfinite(timestamp):
                         with self.lock:
                             if timestamp > self.values.get(key, (0, 0))[1]:
                                 self.values[key] = (value, timestamp)
             except Exception as exc:
-                LOG.warning("Kalshi Pyth stream disconnected: %s", exc)
+                LOG.warning("Kalshi Pyth stream disconnected: %s", type(exc).__name__)
                 self.stop_event.wait(3)
             finally:
                 if ws:
@@ -103,9 +86,11 @@ class KalshiPythPrices:
         if point is None:
             raise ValueError("No Kalshi Pyth observation for " + key)
         value, ts = point
-        if not -5 <= time.time() - ts <= 15:
+        if not observation_fresh(ts, time.time()):
             raise ValueError("Stale Kalshi Pyth observation for " + key)
         return value, ts
 
     def close(self):
         self.stop_event.set()
+        if self.thread.is_alive():
+            self.thread.join(timeout=0.2)

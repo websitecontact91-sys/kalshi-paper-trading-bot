@@ -1,8 +1,12 @@
-name: Validate all-market coverage changes
+name: Validate paper trading implementation and coverage
 
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'paper_state.json'
+      - 'ledger_archive/**'
+      - 'paper_sessions/**'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -10,86 +14,91 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  tests:
+  verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Check out the event commit
+        uses: actions/checkout@v4
         with:
-          python-version: '3.12'
-      - name: Install test dependencies
-        run: |
-          python -m pip install -r requirements.txt
-          python -m pip install cryptography
-      - name: Check syntax
-        run: python -m py_compile market_coverage.py discover.py paper_runner.py reference_windows.py
-      - name: Run offline tests
-        run: python -m pytest -q --ignore=test_kalshi_prices.py
+          persist-credentials: false
 
-  live-market-inventory:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install runtime dependencies
-        run: python -m pip install -r requirements.txt
-      - name: Enumerate currently open 15-minute markets and feed gaps
-        run: timeout 240s python -u market_coverage.py > market-coverage.json
-      - name: Show discovered coverage
-        if: always()
-        run: |
-          if [ -f market-coverage.json ]; then cat market-coverage.json; fi
-      - name: Inspect official series settlement metadata
-        run: timeout 240s python -u settlement_source_audit.py > settlement-sources.json
-      - name: Show settlement metadata
-        if: always()
-        run: |
-          if [ -f settlement-sources.json ]; then cat settlement-sources.json; fi
-      - name: Retain settlement metadata
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: settlement-sources
-          path: settlement-sources.json
-          if-no-files-found: ignore
-      - name: Retain coverage inventory
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: market-coverage
-          path: market-coverage.json
-          if-no-files-found: ignore
+      - name: Record the actual source SHA
+        id: provenance
+        run: >-
+          python3 scripts/workflow_gate.py --provenance-only
+          --github-output "$GITHUB_OUTPUT"
+          --metadata runtime_reports/workflow_provenance.json
 
-  kalshi-paper-dry-run:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
+
       - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Compile and run the complete offline suite
         run: |
-          python -m pip install -r requirements.txt
-          python -m pip install cryptography
-      - name: Audit Kalshi-only CF and Pyth reference feeds (read only)
+          set -euo pipefail
+          python -m compileall -q .
+          python -m pytest -q | tee runtime_reports/pytest.txt
+
+      - name: Exercise all six production-runner simulations
+        run: |
+          set -euo pipefail
+          python simulate.py --scenario all | tee runtime_reports/simulation.txt
+
+      - name: Verify the read-only trading boundary
+        run: |
+          set +e
+          grep -RniE 'create_order|portfolio/orders|place_order' --include='*.py' --exclude-dir=.git .
+          audit_status=$?
+          set -e
+          if [ "$audit_status" -ne 1 ]; then
+            echo 'Trading-boundary source audit failed.'
+            exit 1
+          fi
+          echo 'Trading-boundary source audit: no matches.'
+
+      - name: Validate the thirty-series universe against Kalshi
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+          PAPER_SOURCE_SHA: ${{ steps.provenance.outputs.source_sha }}
         run: |
-          python -m pip install websocket-client
-          python -u audit_kalshi_reference_feeds.py
-      - name: Exercise paper runner without writing state
-        run: python -u paper_runner.py --duration 90
+          set -euo pipefail
+          python validate_universe.py --output universe_report.csv --json-output universe_report.json --wait 10
+          cat universe_report.csv
+
+      - name: Monitor live data for ninety seconds without state writes
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+          PAPER_SOURCE_SHA: ${{ steps.provenance.outputs.source_sha }}
+        run: >-
+          python -u paper_runner.py --duration 90 --interval 2
+          --state paper_state.json --report-dir runtime_reports
+
+      - name: Explain intentionally skipped live checks
+        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
+        run: echo 'Offline checks ran. Credentialed live-data verification is restricted to main-branch push/manual runs; this run does not certify live coverage.'
+
+      - name: Preserve source, test, universe and live-monitor evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            runtime_reports/
+            universe_report.csv
+            universe_report.json
+          if-no-files-found: warn
+          retention-days: 14

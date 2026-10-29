@@ -1,6 +1,10 @@
 name: Kalshi 15-minute paper trading
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main.yml'
   workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
@@ -9,92 +13,119 @@ permissions:
   contents: write
   actions: write
 
-# GitHub Actions permits one running and at most one pending run per group.
-# Do not self-dispatch: cron is the only recurring trigger, every five minutes.
+# Keep the running writer alive. New cron/chain events replace a pending run.
 concurrency:
   group: kalshi-paper-state
   cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   monitor:
     runs-on: ubuntu-24.04
     timeout-minutes: 13
     steps:
-      - name: Download bot code and saved paper state
+      - name: Download current code and persistent paper state
         uses: actions/checkout@v4
         with:
-          persist-credentials: true
           ref: main
+          fetch-depth: 0
+          persist-credentials: true
 
-      - name: Check permanent stop before installing dependencies
-        id: state
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          path = Path('paper_state.json')
-          if not path.exists():
-              raise SystemExit('Missing persistent paper_state.json; refusing to start')
-          state = json.loads(path.read_text())
-          mode = state.get('mode')
-          if mode not in ('SCANNING', 'WAITING_FOR_SETTLEMENT', 'STOPPED'):
-              raise SystemExit('Invalid paper mode; refusing to start')
-          if mode != 'STOPPED' and any(t.get('won') is False for t in state.get('history', [])):
-              raise SystemExit('Recorded loss but mode not STOPPED; refusing to start')
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
-              out.write('stopped=' + ('true' if mode == 'STOPPED' else 'false') + '\n')
-          print('Saved paper mode:', mode)
-          PY
+      - name: Validate saved state and record the actual checkout
+        id: gate
+        run: >-
+          python3 scripts/workflow_gate.py
+          --state paper_state.json
+          --github-output "$GITHUB_OUTPUT"
+          --metadata runtime_reports/workflow_provenance.json
 
-      - name: Archive stopped session before disabling workflow
-        if: steps.state.outputs.stopped == 'true'
-        shell: bash
-        run: |
-          python archive_paper_session.py
-          git add paper_sessions/
-          if ! git diff --cached --quiet; then
-            git -c user.name='Kalshi Paper Bot' -c user.email='paper-bot@users.noreply.github.com' commit -m 'Archive stopped simulated paper session'
-            git push origin HEAD:main
-          fi
-
-      - name: Disable scheduled workflow after permanent stop
-        if: steps.state.outputs.stopped == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          echo 'Permanent paper stop: disabling workflow to prevent further scheduled runs.'
-          gh workflow disable main.yml
+      - name: Explain persistent stop
+        if: steps.gate.outputs.stopped == 'true'
+        run: echo 'STOPPED after the saved session loss. No reset, no scanning, and no successor dispatch. Cron remains enabled.'
 
       - name: Install Python
-        if: steps.state.outputs.stopped == 'false'
+        if: steps.gate.outputs.stopped != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
 
       - name: Install dependencies
-        if: steps.state.outputs.stopped == 'false'
-        run: |
-          python -m pip install -r requirements.txt
-          python -m pip install cryptography
+        if: steps.gate.outputs.stopped != 'true'
+        run: python -m pip install -r requirements.txt
 
-      - name: Run ten-minute persistent simulated paper trading
-        if: steps.state.outputs.stopped == 'false'
+      - name: Compile and test the code that will run
+        if: steps.gate.outputs.stopped != 'true'
+        run: |
+          set -euo pipefail
+          python -m compileall -q .
+          python -m pytest -q | tee runtime_reports/pytest.txt
+
+      - name: Exercise all six deterministic scenarios
+        if: steps.gate.outputs.stopped != 'true'
+        run: |
+          set -euo pipefail
+          python simulate.py --scenario all | tee runtime_reports/simulation.txt
+
+      - name: Verify the read-only trading boundary
+        if: steps.gate.outputs.stopped != 'true'
+        run: |
+          set +e
+          grep -RniE 'create_order|portfolio/orders|place_order' --include='*.py' --exclude-dir=.git .
+          audit_status=$?
+          set -e
+          if [ "$audit_status" -ne 1 ]; then
+            echo 'Trading-boundary source audit failed; no successor or paper runner will start.'
+            exit 1
+          fi
+          echo 'Trading-boundary source audit: no matches.'
+
+      - name: Validate all thirty mappings with current Kalshi data
+        if: steps.gate.outputs.stopped != 'true'
         env:
-          GITHUB_ACTIONS: 'true'
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
-        run: python -u paper_runner.py --duration 600 --interval 2 --paper --persist-to-github
-
-      - name: Archive paper session if the runner stopped after a loss
-        if: steps.state.outputs.stopped == 'false' && success()
-        shell: bash
+          PAPER_SOURCE_SHA: ${{ steps.gate.outputs.source_sha }}
         run: |
-          python archive_paper_session.py
-          git add paper_sessions/
-          if ! git diff --cached --quiet; then
-            git -c user.name='Kalshi Paper Bot' -c user.email='paper-bot@users.noreply.github.com' commit -m 'Archive stopped simulated paper session'
-            git push origin HEAD:main
-          fi
+          set -euo pipefail
+          python validate_universe.py --output universe_report.csv --json-output universe_report.json --wait 10
+          cat universe_report.csv
+
+      # Dispatch only after validation succeeds. A failing test cannot recursively
+      # dispatch another failing test run; the five-minute cron remains recovery.
+      - name: Queue the next serialized run
+        if: success() && steps.gate.outputs.stopped != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run main.yml --ref main
+
+      - name: Run ten-minute persistent simulated paper trading
+        if: steps.gate.outputs.stopped != 'true'
+        env:
+          KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+          PAPER_SOURCE_SHA: ${{ steps.gate.outputs.source_sha }}
+        run: >-
+          python -u paper_runner.py --duration 600 --interval 2
+          --paper --persist-to-github --state paper_state.json
+          --report-dir runtime_reports
+
+      - name: Record final persistent state
+        if: success() && steps.gate.outputs.stopped != 'true'
+        run: python3 scripts/workflow_gate.py --state paper_state.json
+
+      - name: Preserve validation and monitoring evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            runtime_reports/
+            universe_report.csv
+            universe_report.json
+          if-no-files-found: warn
+          retention-days: 14
