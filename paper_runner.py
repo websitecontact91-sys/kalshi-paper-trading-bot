@@ -163,6 +163,14 @@ def round_id(close_time):
     return str(math.ceil(stamp / 900))
 
 
+def candidate_is_fresh(candidate, now, max_age=15):
+    """Reject stale reference quotes before simulated execution."""
+    ts = candidate.get('index_time')
+    if not isinstance(ts, (int, float)) or not math.isfinite(ts):
+        return False
+    return -5 <= now - ts <= max_age
+
+
 def choose(candidates):
     if not candidates:
         return None
@@ -302,6 +310,7 @@ def loop(args):
             if unsupported:
                 LOG.info('FINAL-MINUTE UNSUPPORTED %s',
                          ', '.join('%s:%s' % pair for pair in sorted(unsupported.items())))
+            candidates = [c for c in candidates if candidate_is_fresh(c, time.time())]
             selected = choose(candidates)
             if selected:
                 LOG.info('SELECT %s %s distance=%.5f%% ask=%.3f gross=%.3fx cost=%.2f',
