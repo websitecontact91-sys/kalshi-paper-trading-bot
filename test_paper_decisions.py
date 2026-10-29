@@ -110,3 +110,16 @@ def test_no_side_can_qualify_at_exact_strike():
     m = market(yes_ask=0.85, no_ask=0.85)
     with patch('paper_runner.best_bid_depth', return_value=20):
         assert evaluate_market(m, 100, 1893456845.0, orderbook(), 1000) == []
+
+
+def test_global_round_id_groups_nearby_close_times():
+    from paper_runner import round_id
+    assert round_id('2030-01-01T00:15:00Z') == round_id('2030-01-01T00:14:59Z')
+    assert round_id('2030-01-01T00:15:01Z') != round_id('2030-01-01T00:15:00Z')
+
+
+def test_evaluated_trade_has_global_round_id():
+    from paper_runner import round_id
+    with patch('paper_runner.best_bid_depth', return_value=20):
+        trades = evaluate_market(market(), 105, 1893456845.0, orderbook(), 1000)
+    assert trades[0]['round_id'] == round_id(market()['close_time'])
