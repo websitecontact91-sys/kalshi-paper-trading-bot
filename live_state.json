@@ -190,7 +190,7 @@
       "worst_case_debit": "1.00"
     }
   ],
-  "mode": "RECONCILING",
+  "mode": "WAITING_FOR_SETTLEMENT",
   "pending": {
     "ask": "0.8400",
     "balance_precision": "0.01",
@@ -199,7 +199,31 @@
     "close_time": "2026-10-29T22:30:00Z",
     "current": "702.304",
     "distance_pct": "0.1203157221076583943682002418",
-    "execution": null,
+    "execution": {
+      "debit": "0.849500",
+      "displayed_multiplier": "1.18",
+      "fees": "0.009500",
+      "fill_ids": [
+        "0727aed8-7e21-a67f-27bb-694c9d2303c9"
+      ],
+      "fills": [
+        {
+          "fees": "0.009500",
+          "fill_id": "0727aed8-7e21-a67f-27bb-694c9d2303c9",
+          "filled_at": "2026-10-29T22:29:03.137487+00:00",
+          "is_taker": true,
+          "observed_at": "2026-10-29T22:29:04.527686+00:00",
+          "price": "0.8400",
+          "quantity": "1.00"
+        }
+      ],
+      "first_filled_at": "2026-10-29T22:29:03.137487+00:00",
+      "last_filled_at": "2026-10-29T22:29:03.137487+00:00",
+      "payout": "1.00",
+      "principal": "0.840000",
+      "quantity": "1.00",
+      "weighted_price": "0.8400"
+    },
     "fee_multiplier": "1",
     "observation_time": 1793312938.0,
     "order_id": "01a189c7-eb98-777e-a380-b189e7d41029",
@@ -215,7 +239,7 @@
     "series_ticker": "KXBNB15M",
     "side": "NO",
     "source_sha": "1face99419d83668c05cc3f20104695010cd10f1",
-    "stage": "ACKNOWLEDGED",
+    "stage": "FILLED",
     "submitted_at": "2026-10-29T22:29:03.124886+00:00",
     "target": "703.15",
     "ticker": "KXBNB15M-26OCT291830-30",
