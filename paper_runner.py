@@ -20,7 +20,6 @@ from cryptography.hazmat.primitives.asymmetric import ed25519, padding
 from bot import Kalshi, implied_ask, best_bid_depth
 from discover import discover_open, discover_series
 from market_coverage import classification
-from pyth_prices import PythPrices
 
 LOG = logging.getLogger('paper_runner')
 BASE = 'https://api.elections.kalshi.com/trade-api/v2'
@@ -274,11 +273,6 @@ def loop(args):
         if not STATE_FILE.exists():
             persist(state, push=True)
     cf = KalshiCFPrices()
-    # Only explicitly reviewed Pyth feed IDs are enabled. Missing keys fail closed.
-    pyth_ids = json.loads(os.getenv('PYTH_VERIFIED_FEED_IDS') or '{}')
-    if not isinstance(pyth_ids, dict):
-        raise ValueError('PYTH_VERIFIED_FEED_IDS must be a JSON object')
-    pyth = PythPrices(pyth_ids)
     started = time.monotonic()
     cached_markets = []
     next_discovery = 0.0
@@ -314,13 +308,12 @@ def loop(args):
                 if state.get('trade') and str(state['trade'].get('round_id')) == round_id(m['close_time']):
                     continue
                 series = m.get('series_ticker') or m['ticker'].split('-')[0]
-                if series not in CF_INDEX_IDS and series not in pyth_ids:
+                if series not in CF_INDEX_IDS:
                     unsupported[series] = classification(series)
                     continue
                 try:
                     if series not in price_cache:
-                        price_cache[series] = (cf.price(series) if series in CF_INDEX_IDS
-                                               else pyth.price(series))
+                        price_cache[series] = cf.price(series)
                     px, ts = price_cache[series]
                     fresh = client.market(m['ticker'])
                     book = client.orderbook(m['ticker'])
