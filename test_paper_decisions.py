@@ -226,3 +226,17 @@ def test_complete_paper_lifecycle_win_then_loss(tmp_path):
     persist(restored, path)
     assert load_state(path)['mode'] == 'STOPPED'
     assert len(restored['history']) == 2
+
+def test_live_kalshi_active_status_is_eligible():
+    """Kalshi live market API reports status=active, not just open."""
+    m = market()
+    m['status'] = 'active'
+    with patch('paper_runner.best_bid_depth', return_value=20):
+        candidates = evaluate_market(m, 105, 1893456845.0, orderbook(), 1000)
+    assert len(candidates) == 1
+
+def test_closed_market_still_ineligible():
+    m = market()
+    m['status'] = 'closed'
+    with patch('paper_runner.best_bid_depth', return_value=20):
+        assert evaluate_market(m, 105, 1893456845.0, orderbook(), 1000) == []
