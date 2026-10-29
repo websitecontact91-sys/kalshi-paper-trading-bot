@@ -249,6 +249,7 @@ class PaperEngine:
     def finish(self, *, persist_audit=True, failure=None):
         self._summaries()
         coverage = {'source_sha': self.source, 'run_id': os.environ.get('GITHUB_RUN_ID'),
+            'code_fingerprint': os.environ.get('PAPER_CODE_FINGERPRINT'),
             'scan_started_at': iso(self.first_scan) if self.first_scan is not None else None,
             'scan_ended_at': iso(self.last_scan) if self.last_scan is not None else None,
             'rounds': list(self.rounds.values()),

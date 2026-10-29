@@ -3,14 +3,17 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
 import yaml
 
 from scripts.schedule_evidence import evaluate_evidence, main as evidence_main, read_coverage
-from scripts.workflow_gate import inspect_state, main as gate_main
+from scripts.workflow_gate import (FINGERPRINT_PREFIX, code_fingerprint, inspect_state,
+                                   main as gate_main)
 
 ROOT = Path(__file__).resolve().parents[1]
+FINGERPRINT = FINGERPRINT_PREFIX + "c" * 64
 
 
 def workflow(name):
@@ -93,6 +96,9 @@ def test_both_workflows_record_actual_checkout_and_preserve_evidence():
         assert "--github-output" in provenance["run"]
         live = steps[position(steps, "python -u paper_runner.py")]
         assert "outputs.source_sha" in live["env"]["PAPER_SOURCE_SHA"]
+        assert "outputs.code_fingerprint" in live["env"]["PAPER_CODE_FINGERPRINT"]
+        universe = steps[position(steps, "python validate_universe.py")]
+        assert "outputs.code_fingerprint" in universe["env"]["PAPER_CODE_FINGERPRINT"]
         upload = next(s for s in steps if s.get("uses", "").startswith("actions/upload-artifact@"))
         for expected in ("runtime_reports/", "universe_report.csv", "universe_report.json"):
             assert expected in upload["with"]["path"]
@@ -147,12 +153,44 @@ def test_gate_outputs_actual_sha_and_stop_without_loading_network_dependencies(t
     path = saved_state(tmp_path, mode="STOPPED", history=[{"won": False}])
     output, metadata = tmp_path / "output", tmp_path / "metadata.json"
     monkeypatch.setattr("scripts.workflow_gate.source_metadata",
-                        lambda: {"source_sha": "a" * 40, "event_sha": "b" * 40})
+                        lambda: {"source_sha": "a" * 40, "event_sha": "b" * 40,
+                                 "code_fingerprint": FINGERPRINT})
     assert gate_main(["--state", str(path), "--github-output", str(output),
                       "--metadata", str(metadata)]) == 0
     assert "stopped=true" in output.read_text()
     assert "source_sha=" + "a" * 40 in output.read_text()
+    assert "code_fingerprint=" + FINGERPRINT in output.read_text()
     assert json.loads(metadata.read_text())["source_sha"] != "b" * 40
+
+
+def test_code_fingerprint_survives_state_commits_but_detects_source_and_policy_changes(tmp_path):
+    def git(*args):
+        return subprocess.check_output(["git", "-C", str(tmp_path), *args], text=True).strip()
+    def commit():
+        git("add", ".")
+        git("-c", "user.name=Paper test", "-c", "user.email=paper-test@example.invalid",
+            "commit", "-qm", "Fingerprint fixture")
+        return git("rev-parse", "HEAD")
+    git("init", "-q")
+    (tmp_path / "runner.py").write_text("print('version one')\n")
+    (tmp_path / "paper_state.json").write_text('{"balance":"1000.00"}')
+    first_sha = commit()
+    first = code_fingerprint(cwd=tmp_path)
+    (tmp_path / "paper_state.json").write_text('{"balance":"995.00"}')
+    (tmp_path / "paper_ledger.csv").write_text("debit\n5.00\n")
+    for archive in ("ledger_archive", "paper_sessions"):
+        (tmp_path / archive).mkdir()
+        (tmp_path / archive / "session.json").write_text('{"mode":"STOPPED"}')
+    assert commit() != first_sha
+    assert code_fingerprint(cwd=tmp_path) == first
+    for name in ("runner.py", "quote_policy.json", "requirements.txt", ".github/workflows/main.yml",
+                 "tests/fixtures/quote.json", "ledger_archive/executable.py"):
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        before = code_fingerprint(cwd=tmp_path)
+        target.write_text("changed source or configuration\n")
+        commit()
+        assert code_fingerprint(cwd=tmp_path) != before
 
 
 def evidence_fixture():
@@ -163,6 +201,8 @@ def evidence_fixture():
         {"source_sha": "a" * 40, "run_id": "2", "scan_started_at": stamp(630), "scan_ended_at": stamp(1230),
          "rounds": [{"round_key": stamp(900), "final_window_scanned": True, "reason": "no_candidate"}]},
     ]
+    for record in records:
+        record["code_fingerprint"] = FINGERPRINT
     runs = [
         {"databaseId": 1, "event": "workflow_dispatch", "conclusion": "cancelled", "status": "completed", "updatedAt": stamp(600)},
         {"databaseId": 2, "event": "schedule", "status": "completed",
@@ -178,6 +218,38 @@ def test_evidence_measures_scan_gaps_not_job_start_gaps():
     assert report["schedule_status"] == "VERIFIED"
     assert report["scanner_gaps"][0]["gap_seconds"] == 30
     assert report["chain_recovery"]["scanner_recovery_seconds"] == 30
+
+
+def test_state_only_checkout_changes_can_share_one_verified_code_version():
+    runs, coverage, kwargs = evidence_fixture()
+    coverage[1]["source_sha"] = "b" * 40
+    report = evaluate_evidence(runs, coverage, **kwargs)
+    assert report["schedule_status"] == "VERIFIED"
+    assert report["checks"]["one_code_version_observed"]
+    assert report["code_fingerprints"] == [FINGERPRINT]
+    assert report["source_shas"] == ["a" * 40, "b" * 40]
+
+
+def test_mixed_code_versions_cannot_verify_even_when_all_schedule_checks_pass():
+    runs, coverage, kwargs = evidence_fixture()
+    coverage[1]["source_sha"] = "b" * 40
+    coverage[1]["code_fingerprint"] = FINGERPRINT_PREFIX + "d" * 64
+    report = evaluate_evidence(runs, coverage, **kwargs)
+    assert report["schedule_status"] == "NOT_VERIFIED"
+    assert not report["checks"]["one_code_version_observed"]
+    assert report["remaining_evidence"] == ["one_code_version_observed"]
+
+
+@pytest.mark.parametrize("fingerprint", [None, "", "c" * 64,
+                                        "unknown-v2:sha256:" + "c" * 64,
+                                        FINGERPRINT_PREFIX + "not-a-digest"])
+def test_missing_or_invalid_fingerprint_cannot_verify(fingerprint):
+    runs, coverage, kwargs = evidence_fixture()
+    coverage[1]["code_fingerprint"] = fingerprint
+    report = evaluate_evidence(runs, coverage, **kwargs)
+    assert report["schedule_status"] == "NOT_VERIFIED"
+    assert not report["checks"]["coverage_records_valid"]
+    assert "code fingerprint" in report["invalid_coverage_records"][0]["error"]
 
 
 @pytest.mark.parametrize("explicit_close", [True, False])
@@ -232,10 +304,24 @@ def test_coverage_artifact_binds_to_its_workflow_provenance(tmp_path):
     record = coverage[1]
     record.pop("run_id")
     (tmp_path / "coverage.json").write_text(json.dumps(record))
-    (tmp_path / "workflow_provenance.json").write_text(json.dumps({"run_id": "2", "source_sha": "a" * 40}))
+    provenance = {"run_id": "2", "source_sha": "a" * 40, "code_fingerprint": FINGERPRINT}
+    (tmp_path / "workflow_provenance.json").write_text(json.dumps(provenance))
     assert read_coverage([str(tmp_path)])[0]["run_id"] == "2"
-    (tmp_path / "workflow_provenance.json").write_text(json.dumps({"run_id": "2", "source_sha": "b" * 40}))
+    provenance["source_sha"] = "b" * 40
+    (tmp_path / "workflow_provenance.json").write_text(json.dumps(provenance))
     assert read_coverage([str(tmp_path)])[0]["provenance_conflict"]
+
+
+def test_coverage_and_workflow_fingerprint_disagreement_cannot_verify(tmp_path):
+    runs, coverage, kwargs = evidence_fixture()
+    (tmp_path / "coverage.json").write_text(json.dumps(coverage[1]))
+    (tmp_path / "workflow_provenance.json").write_text(json.dumps({
+        "run_id": "2", "source_sha": "a" * 40,
+        "code_fingerprint": FINGERPRINT_PREFIX + "d" * 64}))
+    records = [coverage[0], *read_coverage([str(tmp_path)])]
+    report = evaluate_evidence(runs, records, **kwargs)
+    assert report["schedule_status"] == "NOT_VERIFIED"
+    assert not report["checks"]["coverage_records_valid"]
 
 
 def test_short_observation_missing_break_and_missed_window_stay_unverified():

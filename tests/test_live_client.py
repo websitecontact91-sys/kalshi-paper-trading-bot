@@ -108,6 +108,15 @@ def test_missing_policy_or_self_declared_verified_flag_cannot_unlock(tmp_path):
     assert result["reason"]
 
 
+@pytest.mark.parametrize("config", [[], None, "invalid policy", 7])
+def test_malformed_policy_object_returns_a_readiness_reason(tmp_path, config):
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps(config))
+    result = quote_policy(policy)
+    assert result["verified"] is False
+    assert result["reason"].startswith("invalid_quote_evidence:")
+
+
 @pytest.mark.parametrize("precision", [None, "0.1", "0.001", 0.01, "NaN"])
 def test_account_precision_requires_an_explicit_supported_exact_value(tmp_path, precision):
     policy = tmp_path / "policy.json"
@@ -177,6 +186,21 @@ def test_equal_displayed_amounts_cannot_substitute_for_the_required_sol_identity
     alter(evidence)
     (tmp_path / "evidence.json").write_text(json.dumps(evidence))
     assert quote_policy(path)["verified"] is False
+
+
+@pytest.mark.parametrize("alter", [
+    lambda e: e.update(model_validation_inputs=[]),
+    lambda e: e["model_validation_inputs"].update(market=None),
+    lambda e: e["provenance"]["field_paths"].update(
+        market_ticker=["synthetic_test_only", "market_ticker", 10000]),
+])
+def test_malformed_identity_evidence_returns_a_readiness_reason(tmp_path, alter):
+    path, evidence = synthetic_identity_policy(tmp_path)
+    alter(evidence)
+    (tmp_path / "evidence.json").write_text(json.dumps(evidence))
+    result = quote_policy(path)
+    assert result["verified"] is False
+    assert result["reason"].startswith("invalid_quote_evidence:")
 
 
 def test_metadata_caches_expire_and_can_be_forced(adapter):

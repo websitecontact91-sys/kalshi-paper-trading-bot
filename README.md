@@ -10,6 +10,8 @@ The deployment currently fails closed for new paper entries because `quote_polic
 
 Dow's mapped US30 observation also remains incompatible until its instrument and units are established against the live contract. All 30 configured series remain visible in the universe report; a missing or incompatible series is never silently removed.
 
+Live Kalshi series metadata exposed two compatibility corrections after the initial deployment: instrument-specific `app.pyth.com` explorer links are now recognized and their decoded feed IDs checked, and WTI uses the official `Commodities.Index.PYTHOIL/USD` identifier instead of the older WTI1M mapping. A live observation from the corrected identifier is still required before that market can qualify.
+
 Readiness additionally requires live same-source deployment evidence, several hours of measured final-minute coverage, and a recorded deliberate chain break recovered by a scheduled run. `scripts/schedule_evidence.py` reports missing evidence rather than inferring it from green workflow jobs.
 
 ## Trading rules
@@ -72,7 +74,7 @@ The workflow serializes writers through `kalshi-paper-state`. It reads and valid
 
 GitHub scheduling is not an exact clock and can be delayed. Serial ten-minute jobs cannot have consecutive job start times under a minute apart. Coverage verification therefore measures **last scan → next first scan**, plus observed final-minute scans for every complete round. It keeps the requested 600-second duration. See [GitHub's schedule-event documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
 
-`PAPER_SOURCE_SHA` records the tested checkout identity independently of subsequent state-only commits. State persistence rejects source changes during a run. A companion validation workflow runs offline checks even when the paper session is stopped; main-branch runs also perform a read-only live inventory and 90-second monitor.
+`PAPER_SOURCE_SHA` records the tested checkout identity independently of subsequent state-only commits. `PAPER_CODE_FINGERPRINT` identifies the tracked code, configuration, tests and documentation, excluding only the exact runtime state/ledger files and JSON session archives. Schedule verification requires a common fingerprint across the observation period and matching provenance for every interval; different state-only commit SHAs do not invalidate the same code version. Missing fingerprints or mixed code/configuration versions cannot pass verification. State persistence rejects source changes during a run. A companion validation workflow runs offline checks even when the paper session is stopped; main-branch runs also perform a read-only live inventory and 90-second monitor.
 
 ## Validation commands
 

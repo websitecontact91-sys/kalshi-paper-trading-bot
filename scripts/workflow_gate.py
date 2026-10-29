@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,36 @@ import subprocess
 import sys
 
 MODES = {"SCANNING", "WAITING_FOR_SETTLEMENT", "STOPPED"}
+FINGERPRINT_PREFIX = "git-tree-state-excluded-v1:sha256:"
+
+
+def code_fingerprint(revision="HEAD", *, cwd=None) -> str:
+    """Hash the tracked source tree while allowing only mutable paper records to vary.
+
+    Tree records include each path, mode, object type and Git object ID. Keep all
+    code, workflows, dependency declarations, policy files, fixtures and tests.
+    Only the exact runtime ledger/state paths and archived JSON state are omitted.
+    The versioned prefix defines this exclusion policy for evidence consumers.
+    """
+    tree = subprocess.check_output(
+        ["git", "ls-tree", "-r", "--full-tree", "-z", revision, "--"], cwd=cwd)
+    digest = hashlib.sha256(FINGERPRINT_PREFIX.encode("ascii") + b"\0")
+    retained = 0
+    for record in tree.split(b"\0"):
+        if not record:
+            continue
+        metadata, path = record.split(b"\t", 1)
+        mode, kind, _ = metadata.split(b" ", 2)
+        runtime_path = path in (b"paper_state.json", b"paper_ledger.csv")
+        archive_json = path.startswith((b"ledger_archive/", b"paper_sessions/")) and path.endswith(b".json")
+        # Executable files and symlinks are never classified as mutable state.
+        if mode == b"100644" and kind == b"blob" and (runtime_path or archive_json):
+            continue
+        digest.update(record + b"\0")
+        retained += 1
+    if not retained:
+        raise ValueError("Cannot fingerprint an empty source tree")
+    return FINGERPRINT_PREFIX + digest.hexdigest()
 
 
 def inspect_state(path: str | Path) -> dict:
@@ -55,6 +86,7 @@ def source_metadata() -> dict:
     actual_sha = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], text=True).strip()
     return {"source_sha": actual_sha,
+            "code_fingerprint": code_fingerprint(actual_sha),
             "event_sha": os.getenv("GITHUB_SHA"),
             "run_id": os.getenv("GITHUB_RUN_ID"),
             "run_attempt": os.getenv("GITHUB_RUN_ATTEMPT"),
@@ -80,6 +112,7 @@ def main(argv=None) -> int:
         if args.github_output:
             with open(args.github_output, "a", encoding="utf-8") as out:
                 out.write("source_sha=" + metadata["source_sha"] + "\n")
+                out.write("code_fingerprint=" + metadata["code_fingerprint"] + "\n")
                 if not args.provenance_only:
                     out.write("stopped=" + str(state["stopped"]).lower() + "\n")
                     out.write("mode=" + state["mode"] + "\n")

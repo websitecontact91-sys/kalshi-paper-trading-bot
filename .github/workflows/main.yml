@@ -89,6 +89,7 @@ jobs:
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
           PAPER_SOURCE_SHA: ${{ steps.gate.outputs.source_sha }}
+          PAPER_CODE_FINGERPRINT: ${{ steps.gate.outputs.code_fingerprint }}
         run: |
           set -euo pipefail
           python validate_universe.py --output universe_report.csv --json-output universe_report.json --wait 10
@@ -109,6 +110,7 @@ jobs:
           KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
           KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
           PAPER_SOURCE_SHA: ${{ steps.gate.outputs.source_sha }}
+          PAPER_CODE_FINGERPRINT: ${{ steps.gate.outputs.code_fingerprint }}
         run: >-
           python -u paper_runner.py --duration 600 --interval 2
           --paper --persist-to-github --state paper_state.json

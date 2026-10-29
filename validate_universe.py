@@ -313,7 +313,8 @@ def build_report(client, *, now=None, wait=0, clock=time.time, sleeper=time.slee
     dow = next(row for row in rows if row["ticker"] == "KXDJIA15M")
     return {
         "schema": "kalshi-paper.universe-report.v1", "read_only": True,
-        "generated_at": _iso(report_now), "source_sha": sha, "configured_count": 30,
+        "generated_at": _iso(report_now), "source_sha": sha,
+        "code_fingerprint": os.environ.get("PAPER_CODE_FINGERPRINT"), "configured_count": 30,
         "max_observation_age_seconds": MAX_OBS_AGE_S,
         "flag_definitions": {
             "configured": "present in the exact requested mapping",

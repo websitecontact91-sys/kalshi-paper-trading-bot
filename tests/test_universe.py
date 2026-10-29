@@ -90,6 +90,96 @@ def test_official_vendor_metadata_required_and_must_match():
     assert not check_compatibility(market(), D("101"), metadata("KXGOLD15M"))[0]
 
 
+# These settlement-source records were captured from Kalshi's live inventory
+# in validation run 40930802503 on 06e0d04.  They are metadata regression cases,
+# not price observations, UI payout evidence, or calls to an external feed.
+CAPTURED_PYTH_SOURCES = [
+    ("KXGOLD15M", "Pyth - Gold", "https://app.pyth.com/explore/Metal.Index.1OZGOLD%2FUSD?returnUrl=%2Fexplore%2Fall%3Fsearch%3D3712%26state%3Dstable"),
+    ("KXSILVER15M", "Pyth - Silver", "https://app.pyth.com/explore/Metal.Index.SILVER%2FUSD?returnUrl=%2Fexplore%3Fstate%3Dstable"),
+    ("KXBRENT15M", "Pyth - Brent", "https://app.pyth.com/explore/Commodities.Index.BRENT%2FUSD?returnUrl=%2Fexplore%3Fsearch%3Dbrent%2Bindex%26state%3Dstable"),
+    ("KXCOPPER15M", "Pyth - Copper", "https://app.pyth.com/explore/Commodities.Index.CU%2FUSD?returnUrl=%2Fexplore%3Fsearch%3Dcopper%26state%3Dstable"),
+    ("KXNATGAS15M", "Pyth - NATGAS", "https://app.pyth.com/explore/Commodities.Index.NATGAS%2FUSD?returnUrl=%2Fexplore%3Fsearch%3Dgas%26state%3Dstable"),
+    ("KXPALLADIUM15M", "Pyth - Palladium", "https://app.pyth.com/explore/Metal.XPD%2FUSD?returnUrl=%2Fexplore%3Fsearch%3Dpalladium%26state%3Dstable"),
+    ("KXPLATINUM15M", "Pyth - Platinum", "https://app.pyth.com/explore/Metal.XPT%2FUSD?returnUrl=%2Fexplore%3Fsearch%3DPLATINUM%26state%3Dstable"),
+    ("KXWTI15M", "Pyth - WTI", "https://app.pyth.com/explore/Commodities.Index.PYTHOIL%2FUSD?returnUrl=%2Fexplore%3Fsearch%3DPythOil%26state%3Dstable"),
+    ("KXGBPUSD15M", "Pyth - GBPUSD", "https://app.pyth.com/explore/FX.GBP%2FUSD?returnUrl=%2Fexplore%3Fsearch%3Dgbpusd%26state%3Dstable"),
+    ("KX2YRRATE15M", "Pyth - 2Y UST", "https://app.pyth.com/explore/InterestRate.US2Y"),
+    ("KX5YRRATE15M", "Pyth - 5Y UST", "https://app.pyth.com/explore/InterestRate.US5Y"),
+    ("KX10YRRATE15M", "Pyth - 10Y UST", "https://app.pyth.com/explore/InterestRate.US10Y"),
+    ("KX30YRRATE15M", "Pyth - 30Y UST", "https://app.pyth.com/explore/InterestRate.US30Y"),
+]
+
+
+@pytest.mark.parametrize("series,name,url", CAPTURED_PYTH_SOURCES)
+def test_captured_kalshi_pyth_explorer_metadata_matches_configured_feed(series, name, url):
+    official = {"ticker": series, "settlement_sources": [{"name": name, "url": url}]}
+    assert check_compatibility(market(series), D("101"), official)[0]
+
+
+def test_wti_mapping_uses_actual_official_pythoil_identifier():
+    assert PYTH_INDEX_IDS["KXWTI15M"] == "Commodities.Index.PYTHOIL/USD"
+    assert UNIVERSE["KXWTI15M"]["source_id"] == "Commodities.Index.PYTHOIL/USD"
+    old_identifier = {"settlement_sources": [{
+        "name": "Pyth - WTI", "url": "https://app.pyth.com/explore/Commodities.Index.WTI1M%2FUSD",
+    }]}
+    assert check_compatibility(market("KXWTI15M"), D("101"), old_identifier) == (
+        False, "official_reference_identifier_mismatch"
+    )
+
+
+@pytest.mark.parametrize("series", ["KXEURUSD15M", "KXAUDUSD15M", "KXUSDCAD15M", "KXUSDJPY15M"])
+def test_captured_generic_legacy_pyth_source_stays_supported(series):
+    official = {"ticker": series, "settlement_sources": [{"name": "Pyth", "url": "https://pythdata.app/explore"}]}
+    assert check_compatibility(market(series), D("101"), official)[0]
+
+
+def test_vendor_name_without_identifier_still_requires_pyth_name():
+    official = {"settlement_sources": [{"name": "Pyth - Gold"}]}
+    assert check_compatibility(market("KXGOLD15M"), D("101"), official)[0]
+    official["settlement_sources"][0]["name"] = "Pyth-like provider"
+    assert not check_compatibility(market("KXGOLD15M"), D("101"), official)[0]
+
+
+@pytest.mark.parametrize("url", [
+    "https://app.pyth.com.evil.example/explore/Metal.Index.1OZGOLD%2FUSD",
+    "https://app-pyth.com/explore/Metal.Index.1OZGOLD%2FUSD",
+    "https://app.pyth.com@evil.example/explore/Metal.Index.1OZGOLD%2FUSD",
+    "https://evil.example/?returnUrl=https://app.pyth.com/explore/Metal.Index.1OZGOLD%2FUSD",
+])
+def test_pyth_display_name_cannot_override_misleading_url_host(url):
+    official = {"settlement_sources": [{"name": "Pyth - Gold", "url": url}]}
+    assert check_compatibility(market("KXGOLD15M"), D("101"), official) == (
+        False, "official_settlement_source_mismatch_or_unverified"
+    )
+
+
+def test_explorer_identifier_mismatch_is_not_hidden_by_name_or_return_url():
+    official = {"settlement_sources": [{
+        "name": "Pyth - Gold",
+        "url": "https://app.pyth.com/explore/Metal.Index.SILVER%2FUSD?returnUrl=%2Fexplore%2FMetal.Index.1OZGOLD%2FUSD",
+    }]}
+    assert check_compatibility(market("KXGOLD15M"), D("101"), official) == (
+        False, "official_reference_identifier_mismatch"
+    )
+
+
+def test_conflicting_official_explorer_identifiers_fail_closed():
+    official = {"settlement_sources": [
+        {"name": "Pyth - Gold", "url": "https://app.pyth.com/explore/Metal.Index.1OZGOLD%2FUSD"},
+        {"name": "Pyth - Silver", "url": "https://app.pyth.com/explore/Metal.Index.SILVER%2FUSD"},
+    ]}
+    assert check_compatibility(market("KXGOLD15M"), D("101"), official) == (
+        False, "official_reference_identifier_mismatch"
+    )
+
+
+def test_recognized_dow_feed_link_does_not_establish_matching_live_instrument():
+    official = {"settlement_sources": [{"name": "Pyth - US30", "url": "https://app.pyth.com/explore/Equity.Index.US30%2FUSD"}]}
+    assert check_compatibility(market("KXDJIA15M"), D("101"), official) == (
+        False, "dow_instrument_units_unverified"
+    )
+
+
 @pytest.mark.parametrize("current", ["0.01", "1", "100", "1000000"])
 def test_no_arbitrary_ordinary_market_distance_gate(current):
     assert check_compatibility(market(), D(current), metadata())[0]

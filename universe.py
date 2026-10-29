@@ -5,7 +5,7 @@ its instrument and units match a live contract.  The report keeps those facts
 separate.  All observations are acquired from Kalshi by the live client.
 """
 from decimal import Decimal
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from payout_quote import as_decimal
 
@@ -31,7 +31,9 @@ PYTH_INDEX_IDS = {
     "KXNATGAS15M": "Commodities.Index.NATGAS/USD",
     "KXPALLADIUM15M": "Metal.XPD/USD",
     "KXPLATINUM15M": "Metal.XPT/USD",
-    "KXWTI15M": "Commodities.Index.WTI1M/USD",
+    # Kalshi's captured series settlement-source URL identifies PYTHOIL, not
+    # WTI1M (live validation run 40930802503, source commit 06e0d04).
+    "KXWTI15M": "Commodities.Index.PYTHOIL/USD",
     "KXEURUSD15M": "FX.EUR/USD",
     "KXGBPUSD15M": "FX.GBP/USD",
     "KXAUDUSD15M": "FX.AUD/USD",
@@ -131,6 +133,42 @@ def series_of(market):
     return str(explicit or inferred)
 
 
+def _pyth_source(source):
+    """Return vendor recognition and an explorer feed ID, if explicitly given.
+
+    These are links in Kalshi's own series metadata, never requests to Pyth.
+    Generic legacy explorer links identify the vendor only.  The modern
+    app.pyth.com/explore/<ID> links also let us validate the configured feed.
+    """
+    name = str(source.get("name") or "").strip().casefold()
+    url = str(source.get("url") or "").strip()
+    named_pyth = name in {"pyth", "pyth network"} or name.startswith("pyth - ")
+    if not url:
+        return named_pyth, None
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").casefold()
+        valid_url = (
+            parsed.scheme == "https" and not parsed.username and not parsed.password
+            and parsed.port in (None, 443)
+        )
+    except ValueError:
+        return False, None
+    recognized_host = (
+        host in {"app.pyth.com", "pythdata.app", "pyth.network"}
+        or host.endswith(".pyth.network")
+    )
+    if not valid_url or not recognized_host:
+        return False, None
+    if host == "app.pyth.com" and parsed.path in {"/explore", "/explore/"}:
+        return True, None
+    if host == "app.pyth.com" and parsed.path.startswith("/explore/"):
+        # Decode exactly once, preserving the feed ID's case.  Query-string
+        # returnUrl values must not be mistaken for the source identifier.
+        return True, unquote(parsed.path[len("/explore/"):]).rstrip("/")
+    return True, None
+
+
 def _source_vendor(metadata):
     """Read vendor evidence from official series settlement-source metadata."""
     if not isinstance(metadata, dict):
@@ -149,8 +187,7 @@ def _source_vendor(metadata):
         if ("cf benchmarks" in name or "cfbenchmarks" in name
                 or host == "cfbenchmarks.com" or host.endswith(".cfbenchmarks.com")):
             vendors.add("CF Benchmarks")
-        if (name in {"pyth", "pyth network"} or host == "pyth.network"
-                or host.endswith(".pyth.network")):
+        if _pyth_source(source)[0]:
             vendors.add("Kalshi-hosted Pyth")
     return vendors
 
@@ -200,6 +237,16 @@ def check_compatibility(market, current, series_metadata):
     vendors = _source_vendor(metadata)
     if expected not in vendors:
         return False, "official_settlement_source_mismatch_or_unverified"
+    if expected == "Kalshi-hosted Pyth":
+        source_ids = {
+            source_id
+            for source in metadata.get("settlement_sources") or []
+            if isinstance(source, dict)
+            for recognized, source_id in [_pyth_source(source)]
+            if recognized and source_id is not None
+        }
+        if source_ids and source_ids != {UNIVERSE[series]["source_id"]}:
+            return False, "official_reference_identifier_mismatch"
     return True, "verified_binary_above_contract_and_official_source"
 
 

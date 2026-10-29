@@ -8,6 +8,8 @@ import math
 from pathlib import Path
 import re
 
+FINGERPRINT_PATTERN = r"git-tree-state-excluded-v1:sha256:[0-9a-f]{64}"
+
 
 def timestamp(value) -> float:
     if isinstance(value, bool) or value is None:
@@ -49,7 +51,7 @@ def evaluate_evidence(runs, coverage, *, minimum_hours=3.0, max_gap_seconds=60.0
         raise ValueError("run evidence must be a list or a workflow_runs object")
     runs = [r for r in runs if isinstance(r, dict)]
     scheduled = [r for r in runs if r.get("event") == "schedule"]
-    intervals, rounds, invalid, sources = [], {}, [], set()
+    intervals, rounds, invalid, sources, fingerprints = [], {}, [], set(), set()
     for index, record in enumerate(coverage):
         try:
             if not isinstance(record, dict):
@@ -64,6 +66,10 @@ def evaluate_evidence(runs, coverage, *, minimum_hours=3.0, max_gap_seconds=60.0
                 raise ValueError("coverage and workflow provenance disagree")
             source = source.strip()
             sources.add(source)
+            fingerprint = record.get("code_fingerprint")
+            if not isinstance(fingerprint, str) or not re.fullmatch(FINGERPRINT_PATTERN, fingerprint):
+                raise ValueError("missing or invalid versioned code fingerprint")
+            fingerprints.add(fingerprint)
             run_id = str(record.get("run_id", record.get("workflow_run_id")) or "")
             intervals.append((start, end, source, run_id))
             for row in record.get("rounds", []):
@@ -139,6 +145,7 @@ def evaluate_evidence(runs, coverage, *, minimum_hours=3.0, max_gap_seconds=60.0
     checks = {
         "actual_scan_intervals_available": len(intervals) >= 2,
         "coverage_records_valid": not invalid and bool(intervals),
+        "one_code_version_observed": bool(intervals) and len(fingerprints) == 1,
         "observation_span_sufficient": span >= minimum_hours * 3600,
         "successor_scan_gaps_within_limit": bool(gaps) and all(
             0 <= gap["gap_seconds"] <= max_gap_seconds for gap in gaps),
@@ -155,6 +162,7 @@ def evaluate_evidence(runs, coverage, *, minimum_hours=3.0, max_gap_seconds=60.0
         "observed_span_hours": round(span / 3600, 6),
         "first_scan_at": iso(first), "last_scan_at": iso(last),
         "source_shas": sorted(sources),
+        "code_fingerprints": sorted(fingerprints),
         "coverage_run_ids": sorted({i[3] for i in intervals if i[3]}),
         "coverage_intervals": len(intervals),
         "scheduled_events_observed": len(scheduled),
@@ -168,6 +176,7 @@ def evaluate_evidence(runs, coverage, *, minimum_hours=3.0, max_gap_seconds=60.0
             "Measure last scan to next first scan; serialized 600-second jobs cannot start less than a minute apart.",
             "Scheduled events can be delayed or dropped; a five-minute cron is not an execution guarantee.",
             "Each listed source SHA is preserved; different state-only commits are not silently represented as one SHA.",
+            "Every scan interval must share one versioned tracked-tree fingerprint; only runtime state, ledger and archived state JSON are excluded.",
             "Recovery requires the cancelled run's updatedAt and coverage bound to the recovering schedule run ID.",
         ],
     }
@@ -185,6 +194,8 @@ def read_coverage(inputs):
         if isinstance(payload, dict) and "scan_started_at" in payload and provenance_path.is_file():
             provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
             if provenance.get("source_sha") != payload.get("source_sha"):
+                payload["provenance_conflict"] = True
+            if provenance.get("code_fingerprint") != payload.get("code_fingerprint"):
                 payload["provenance_conflict"] = True
             if payload.get("run_id") and str(payload["run_id"]) != str(provenance.get("run_id")):
                 payload["provenance_conflict"] = True
