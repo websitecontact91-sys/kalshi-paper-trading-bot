@@ -1,0 +1,128 @@
+name: Live trading - disabled until owner activation
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Operation (the default only reads account data)'
+        type: choice
+        options: [preflight, initialize, reconcile, run]
+        default: preflight
+        required: true
+      confirmation:
+        description: 'For run only: I_ACCEPT_REAL_MONEY_TRADES'
+        type: string
+        default: ''
+        required: false
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: kalshi-live-state
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  live:
+    if: github.event_name == 'workflow_dispatch' || vars.KALSHI_LIVE_SCHEDULE_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 13
+    steps:
+      - name: Check out current source only
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Check the owner activation controls
+        id: activation
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_MODE: ${{ inputs.mode }}
+          OWNER_CONFIRMATION: ${{ inputs.confirmation }}
+          SCHEDULE_ENABLED: ${{ vars.KALSHI_LIVE_SCHEDULE_ENABLED }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from decimal import Decimal
+          from pathlib import Path
+          config = json.loads(Path('live_config.json').read_text())
+          if config.get('schema') != 'kalshi-live-config.v1' or Decimal(config['max_total_cost_usd']) != Decimal('1.00'):
+              raise SystemExit('Invalid live configuration')
+          scheduled = os.environ['EVENT_NAME'] == 'schedule'
+          mode = 'run' if scheduled else os.environ.get('REQUESTED_MODE', 'preflight')
+          if mode not in {'preflight', 'initialize', 'reconcile', 'run'}:
+              raise SystemExit('Unknown live operation')
+          allowed = mode != 'run' or (config.get('enabled') is True and
+              ((scheduled and os.environ['SCHEDULE_ENABLED'] == 'true') or
+               (not scheduled and os.environ['OWNER_CONFIRMATION'] == 'I_ACCEPT_REAL_MONEY_TRADES')))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write('allowed=' + str(allowed).lower() + '\n')
+              out.write('mode=' + mode + '\n')
+          print('Operation allowed: ' + mode if allowed else 'Live order execution remains disabled.')
+          PY
+      - uses: actions/setup-python@v5
+        if: steps.activation.outputs.allowed == 'true'
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install and verify the selected source
+        if: steps.activation.outputs.allowed == 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m compileall -q .
+          python -m pytest -q
+          python scripts/audit_paper_boundary.py
+      - name: Inspect the durable live session before scheduling another run
+        if: steps.activation.outputs.allowed == 'true' && steps.activation.outputs.mode == 'run'
+        id: state
+        env:
+          KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+        run: python -u live_runner.py --inspect-state --persist-to-github
+      - name: Check account and exchange reads before execution
+        if: steps.activation.outputs.allowed == 'true' && (steps.activation.outputs.mode == 'preflight' || (steps.activation.outputs.mode == 'run' && steps.state.outputs.can_run == 'true'))
+        env:
+          KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+        run: python -u live_runner.py --preflight
+      - name: Initialize the separate live journal explicitly
+        if: steps.activation.outputs.allowed == 'true' && steps.activation.outputs.mode == 'initialize'
+        env:
+          KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+        run: python -u live_runner.py --initialize-state --persist-to-github
+      - name: Reconcile existing orders without permitting new orders
+        if: steps.activation.outputs.allowed == 'true' && steps.activation.outputs.mode == 'reconcile'
+        env:
+          KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+        run: python -u live_runner.py --reconcile-only --persist-to-github
+      - name: Queue the next serialized run only when recurring live execution is armed
+        if: success() && steps.activation.outputs.allowed == 'true' && steps.activation.outputs.mode == 'run' && steps.state.outputs.can_run == 'true' && vars.KALSHI_LIVE_SCHEDULE_ENABLED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run live-trading.yml --ref main -f mode=run -f confirmation=I_ACCEPT_REAL_MONEY_TRADES
+      - name: Run the ten-minute live session
+        if: steps.activation.outputs.allowed == 'true' && steps.activation.outputs.mode == 'run' && steps.state.outputs.can_run == 'true'
+        env:
+          KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+        run: python -u live_runner.py --execute-live --confirm-real-money --persist-to-github
+      - name: Preserve run diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: live_reports/
+          if-no-files-found: ignore
+          retention-days: 7

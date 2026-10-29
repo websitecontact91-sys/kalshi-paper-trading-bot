@@ -1,6 +1,6 @@
 # Kalshi 15-minute paper trading
 
-This repository contains one active, read-only Kalshi paper simulator. It uses live Kalshi market data and simulated cash. Its HTTP client allows market, series, event, order-book and Kalshi-hosted reference-feed reads only. It has no real trading transport.
+The scheduled paper simulator uses live Kalshi market data and simulated cash. Its HTTP client allows market, series, event, order-book and Kalshi-hosted reference-feed reads only. A separate live-account implementation is included with real-order submission disabled by default. Both use a $1 total budget including fees for new entries.
 
 ## Current deployment status
 
@@ -57,6 +57,55 @@ No documented read-only retail $5 payout-preview endpoint was established during
 An optional strict capture-validation mode remains available for later investigation of retail UI parity. `quote_adapter.build_quote` verifies an audited internal `kalshi-paper.normalized-quote.v1` capture against preserved raw JSON, a Kalshi GET source URL, timestamp, SHA256, and exact field paths. That optional validation is separate from the configured API-based paper mode. Setting a purported verification boolean does not turn synthetic data into a genuine capture.
 
 The fixture in `tests/fixtures/sol_5usd_screenshot_arithmetic.json` is an arithmetic regression only. The README in that directory explains its provenance limits. Synthetic parser fixtures created by tests are never installed as live evidence.
+
+## Live-account implementation: disabled by default
+
+`live_config.json` ships with `enabled: false`. The paper workflow still invokes only `paper_runner.py --paper`; it cannot import the live broker through its local dependency graph. `scripts/audit_paper_boundary.py` checks that graph and the market-only HTTP transport. Adding optional live code does not change the paper workflow into a real-money workflow.
+
+`live_broker.py` implements authenticated account reads and the current V2 order interface. A YES purchase maps to a bid at its YES price; a NO purchase maps to an ask at `1 - NO price` on V2's YES-price scale. Orders use fixed-point quantities/prices, a deterministic client order ID, and fill-or-kill. Writes are disabled by default in both the broker and execution engine. No order is sent by account preflight, initialization, state inspection, or reconciliation-only mode.
+
+`live_runner.py` uses the same thirty-series universe, Kalshi-hosted references, eligibility rules, signed-distance ranking, final-minute window and fresh-quote revalidation as the paper engine. It independently resizes the selected quote using a conservative live cost bound. The default command is a read-only account preflight:
+
+```bash
+python live_runner.py --preflight
+```
+
+The preflight verifies available account cash, exchange status, resting-order reads and position reads. Its report explicitly says that real-order execution has not been tested. Successfully reading a balance does not prove permission to submit an order, an actual fill, or a completed real-money settlement.
+
+### Actual fills, fees and the $1 limit
+
+The V2 order schema does not document a server-enforced total-cost field that includes fees. The live implementation therefore sizes with a conservative bound under the currently observed quadratic fee terms: every minimum 0.01-contract increment is treated as a separately rounded fill, possible rebates are ignored, and cent rounding conservatively covers either documented account type. The bound must be at most $1 before submission. The expected fee-inclusive payout must still display within 1.10–1.20, and the selected ask must still be 80–90 cents.
+
+This bound can produce a smaller live position than the paper model. For example, at an 87-cent ask the paper model buys 1.13 contracts for $0.9921; the conservative live model can choose 1.00 contract with an expected $0.88 debit. Both use a maximum $1 budget, and unused money remains available. A fee-policy change during matching is not covered by a nonexistent server-side cost cap. Actual fills and fees remain authoritative; an accounting discrepancy or rule breach halts further entries.
+
+The live journal records actual attributed fills, their IDs, timestamps, quantities, prices, principal, fees and debit. Order aggregates must agree with those fills. An acknowledged order is not recorded as a filled trade merely because its POST succeeded. Unknown or partial outcomes remain under reconciliation; a remaining/resting order or inconsistent response halts new entries for review. The implementation never guesses a fill, retries an uncertain submission, or cancels unrelated account orders.
+
+Official market results and a matching account settlement are both required to recognize P/L. Aggregate settlement quantity, principal and fees must match the bot's own position; existing exposure in the selected ticker blocks entry. Deposits, withdrawals and unrelated positions do not become bot profit. A win allows the next unused round. A loss persists `STOPPED`; risk violations persist `HALTED`. A verified void needs evidence of the actual full refund. Missing, conflicting or insufficiently precise settlement evidence remains pending or halted.
+
+### Durable intent and recovery
+
+`live_state.py` maintains an independent `kalshi-live.v1` journal bound to environment, subaccount and a hash of the API-key identity. A completed paper session is never imported as real cash or positions. The intent and used-round marker are saved durably before the first order request. The entry window and reference freshness are checked again after account reads and after saving the intent.
+
+`live_persistence.py` uses an atomic fsynced local journal plus a separate GitHub `live-state` branch containing only `live_state.json`. It confirms the exact remote state before permitting submission, refuses competing writers, and detects a successful push whose acknowledgement was lost. It never rewrites the source branch or the paper ledger. The workflow uses its own single-writer concurrency group; production execution requires this remote journal and GitHub Actions. Local files support offline tests and read-only work, not production execution.
+
+A restart reconciles the saved client/order identity first. A request timeout or an intent interrupted before its outcome is known never causes an automatic second POST. If no order can yet be found, that intent remains unresolved for review; an empty lookup is not proof that a delayed request failed. Previously observed fills cannot silently change or disappear. State validation independently checks fill totals and permanent stop/halt conditions.
+
+### Owner-controlled eventual activation
+
+`.github/workflows/live-readiness.yml` runs offline lifecycle tests and an authenticated GET-only preflight. It cannot place orders. `.github/workflows/live-trading.yml` is prepared separately with the same five-minute schedule and a 600-second scan, but scheduled live jobs are gated by the unset/false repository variable `KALSHI_LIVE_SCHEDULE_ENABLED` and the disabled versioned configuration.
+
+The live workflow's manual default is `preflight`. Its `initialize` operation creates a new separate journal only when one does not exist; it cannot reset an existing or stopped session. `reconcile` refreshes existing order/settlement records without allowing a new order. `run` requires `live_config.json` to be explicitly enabled and the owner's exact `I_ACCEPT_REAL_MONEY_TRADES` confirmation. Recurring scans additionally require the owner to enable `KALSHI_LIVE_SCHEDULE_ENABLED`. The state gate runs before a successor is queued, so a settled loss or a halt without pending exposure does not create an endless chain.
+
+Those production activation controls are intentionally left off in this implementation. The repository contains no automatic switch from paper to real money. Offline tests use mocked orders and account responses; no real order placement or real-money end-to-end settlement is claimed. The owner must initiate and supervise any eventual exchange execution test separately.
+
+Primary API references for the separate live implementation:
+
+- [V2 order creation](https://docs.kalshi.com/api-reference/orders/create-order-v2)
+- [Order direction and price conventions](https://docs.kalshi.com/getting_started/order_direction)
+- [Account balance](https://docs.kalshi.com/api-reference/portfolio/get-balance)
+- [Order retrieval](https://docs.kalshi.com/api-reference/orders/get-order)
+- [Fills](https://docs.kalshi.com/api-reference/portfolio/get-fills)
+- [Account settlements](https://docs.kalshi.com/api-reference/portfolio/get-settlements)
 
 ## State and history
 
@@ -130,6 +179,7 @@ The diagnostic analyzer requires three hours by default, observed schedule event
 | Rule | Active implementation | Tests |
 |---|---|---|
 | Exact debit/payout and displayed eligibility | `payout_quote.PayoutQuote`, `payout_eligible` | `test_payout_quote.py` |
+| $1 budget for new entries; historical accounting retained | `trade_config`, `selection`, `state_store` | Quote, selection, runner and historical-settlement tests |
 | Captured quote provenance / fee model | `quote_adapter.build_quote`, `build_modeled_quote`; `live_client.quote_policy` | `test_quote_adapter.py`, `test_live_client.py` |
 | Eligibility and deterministic ranking | `selection.rank`, `distance_pct` | `test_selection.py`, `test_runner.py` |
 | Last-minute timing and freshness | `timing.in_entry_window`, `observation_fresh` | `test_timing.py`, `test_runner.py` |
@@ -140,5 +190,9 @@ The diagnostic analyzer requires three hours by default, observed schedule event
 | Kalshi-only read boundary and batching | `kalshi_client.Kalshi`, `LiveKalshiClient` | `test_client.py`, `test_live_client.py`, `test_no_orders.py` |
 | Actual runner scenarios | `simulate.run_scenario`, `PaperEngine` | `test_runner.py` and six CI simulations |
 | Scheduling / stop gate / evidence | Workflows; `workflow_gate.py`, `schedule_evidence.py` | `test_workflow.py` |
+| Disabled-by-default live V2 transport and cost bound | `live_broker` | `test_live_broker.py` |
+| Durable live intent, actual fills, settlement and persistent halt | `live_execution`, `live_state` | `test_live_execution.py` |
+| Independent live journal durability | `live_persistence` | `test_live_persistence.py` |
+| Shared strategy, live sizing and read-only preflight | `live_runner` | `test_live_runner.py` |
 
 All active tests are under `tests/`. Old SQLite/Coinbase engines, duplicate runners/configurations and their obsolete tests are quarantined as non-executable `.txt` files in `legacy/`. They are historical reference, excluded from imports, compilation, test collection and workflow execution. `discover.py` remains a standalone catalog diagnostic; it does not own strategy rules or replace the fixed 30-series universe.

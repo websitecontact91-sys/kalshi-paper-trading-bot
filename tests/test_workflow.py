@@ -2,8 +2,10 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 import yaml
@@ -37,6 +39,64 @@ def test_requested_schedule_duration_and_single_writer_are_preserved():
     assert "--duration 600 --interval 2" in run["run"]
     assert "--paper --persist-to-github --state paper_state.json" in run["run"]
     assert "--report-dir runtime_reports" in run["run"]
+
+
+def test_live_deployment_is_disabled_and_account_verification_cannot_submit_orders():
+    config = json.loads((ROOT / 'live_config.json').read_text())
+    assert config['enabled'] is False
+    assert config['max_total_cost_usd'] == '1.00'
+    doc = workflow('live-readiness.yml')
+    assert doc['permissions'] == {'contents': 'read'}
+    commands = '\n'.join(step.get('run', '') for step in doc['jobs']['verify']['steps'])
+    assert 'live_runner.py --preflight' in commands
+    assert '--execute-live' not in commands and '--initialize-state' not in commands
+
+
+def test_live_schedule_has_separate_serialization_and_stop_gate_before_successor():
+    doc = workflow('live-trading.yml')
+    assert doc['on']['schedule'] == [{'cron': '*/5 * * * *'}]
+    assert 'push' not in doc['on']
+    assert doc['on']['workflow_dispatch']['inputs']['mode']['default'] == 'preflight'
+    assert doc['concurrency'] == {'group': 'kalshi-live-state', 'cancel-in-progress': 'false'}
+    job = doc['jobs']['live']
+    assert "vars.KALSHI_LIVE_SCHEDULE_ENABLED == 'true'" in job['if']
+    steps = job['steps']
+    state_gate = position(steps, '--inspect-state --persist-to-github')
+    dispatch = position(steps, 'gh workflow run live-trading.yml')
+    execute = position(steps, '--execute-live --confirm-real-money --persist-to-github')
+    assert state_gate < dispatch < execute
+    for index in (dispatch, execute):
+        assert "steps.activation.outputs.allowed == 'true'" in steps[index]['if']
+        assert "steps.state.outputs.can_run == 'true'" in steps[index]['if']
+    assert "vars.KALSHI_LIVE_SCHEDULE_ENABLED == 'true'" in steps[dispatch]['if']
+    assert 'paper_state.json' not in steps[execute]['run']
+
+
+@pytest.mark.parametrize('enabled,event,mode,confirmation,schedule_enabled,allowed', [
+    (False, 'workflow_dispatch', 'run', 'I_ACCEPT_REAL_MONEY_TRADES', 'true', False),
+    (True, 'workflow_dispatch', 'run', '', 'true', False),
+    (True, 'workflow_dispatch', 'run', 'I_ACCEPT_REAL_MONEY_TRADES', 'false', True),
+    (False, 'schedule', '', '', 'true', False),
+    (True, 'schedule', '', '', 'false', False),
+    (True, 'schedule', '', '', 'true', True),
+    (False, 'workflow_dispatch', 'preflight', '', 'false', True),
+    (False, 'workflow_dispatch', 'reconcile', '', 'false', True),
+])
+def test_actual_live_workflow_gate_rejects_unarmed_execution(tmp_path, enabled, event, mode,
+                                                         confirmation, schedule_enabled, allowed):
+    doc = workflow('live-trading.yml')
+    block = next(s['run'] for s in doc['jobs']['live']['steps'] if s.get('id') == 'activation')
+    script = block.split("python3 - <<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
+    config = json.loads((ROOT / 'live_config.json').read_text())
+    config['enabled'] = enabled
+    (tmp_path / 'live_config.json').write_text(json.dumps(config))
+    output = tmp_path / 'output'
+    env = dict(os.environ, EVENT_NAME=event, REQUESTED_MODE=mode, OWNER_CONFIRMATION=confirmation,
+               SCHEDULE_ENABLED=schedule_enabled, GITHUB_OUTPUT=str(output))
+    completed = subprocess.run([sys.executable, '-c', script], cwd=tmp_path, env=env,
+                               text=True, capture_output=True, timeout=5)
+    assert completed.returncode == 0, completed.stderr
+    assert 'allowed=' + str(allowed).lower() in output.read_text()
 
 
 def test_chain_dispatch_requires_tests_simulations_and_universe_to_pass():

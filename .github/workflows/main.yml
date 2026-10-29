@@ -72,16 +72,7 @@ jobs:
 
       - name: Verify the read-only trading boundary
         if: steps.gate.outputs.stopped != 'true'
-        run: |
-          set +e
-          grep -RniE 'create_order|portfolio/orders|place_order' --include='*.py' --exclude-dir=.git .
-          audit_status=$?
-          set -e
-          if [ "$audit_status" -ne 1 ]; then
-            echo 'Trading-boundary source audit failed; no successor or paper runner will start.'
-            exit 1
-          fi
-          echo 'Trading-boundary source audit: no matches.'
+        run: python scripts/audit_paper_boundary.py
 
       - name: Validate all thirty mappings with current Kalshi data
         if: steps.gate.outputs.stopped != 'true'

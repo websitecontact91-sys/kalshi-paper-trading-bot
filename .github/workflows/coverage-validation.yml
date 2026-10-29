@@ -55,16 +55,7 @@ jobs:
           python simulate.py --scenario all | tee runtime_reports/simulation.txt
 
       - name: Verify the read-only trading boundary
-        run: |
-          set +e
-          grep -RniE 'create_order|portfolio/orders|place_order' --include='*.py' --exclude-dir=.git .
-          audit_status=$?
-          set -e
-          if [ "$audit_status" -ne 1 ]; then
-            echo 'Trading-boundary source audit failed.'
-            exit 1
-          fi
-          echo 'Trading-boundary source audit: no matches.'
+        run: python scripts/audit_paper_boundary.py
 
       - name: Validate the thirty-series universe against Kalshi
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

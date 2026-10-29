@@ -1,0 +1,53 @@
+name: Verify live account integration - no orders
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, live-one-dollar-preflight]
+    paths:
+      - 'live_broker.py'
+      - 'live_execution.py'
+      - 'live_state.py'
+      - 'live_persistence.py'
+      - 'live_runner.py'
+      - 'live_config.json'
+      - 'trade_config.py'
+      - 'tests/test_live_*.py'
+      - '.github/workflows/live-readiness.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run offline execution and durability tests
+        run: |
+          set -euo pipefail
+          python -m compileall -q .
+          python -m pytest -q tests/test_live_broker.py tests/test_live_execution.py tests/test_live_runner.py tests/test_live_persistence.py
+          python scripts/audit_paper_boundary.py
+      - name: Read the real account with order submission disabled
+        env:
+          KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+          KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+        run: python -u live_runner.py --preflight --report-dir live_reports
+      - name: Preserve account-read evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-readiness-${{ github.run_id }}-${{ github.run_attempt }}
+          path: live_reports/
+          if-no-files-found: warn
+          retention-days: 7

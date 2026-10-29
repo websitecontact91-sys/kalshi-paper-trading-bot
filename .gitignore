@@ -2,6 +2,8 @@ __pycache__/
 .pytest_cache/
 .venv/
 runtime_reports/
+live_reports/
+live_runtime/
 universe_report.csv
 universe_report.json
 *.tmp
