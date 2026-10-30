@@ -14,8 +14,6 @@ on:
         type: string
         default: ''
         required: false
-  schedule:
-    - cron: '*/5 * * * *'
 
 permissions:
   contents: write
