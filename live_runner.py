@@ -124,6 +124,25 @@ class LiveCandidateProvider:
                 continue
         return result
 
+    def refresh_candidate(self, candidate):
+        """Re-read the exact market and require the selected side to qualify now."""
+        try:
+            market = {'ticker': candidate['ticker'],
+                      'series_ticker': candidate.get('series_ticker', candidate['ticker'].split('-')[0])}
+            fresh = self.client.snapshot(market, self.clock(), include_quotes=True)
+            if fresh.get('market', {}).get('ticker') != candidate['ticker']:
+                raise CandidateInvalid('price-lock market identity changed')
+            for chosen, values in self._choices(fresh, self.clock()):
+                if (chosen.side == candidate['side']
+                        and values['round_key'] == candidate['round_key']):
+                    return values
+            raise CandidateInvalid('selected side no longer satisfies the live strategy')
+        except CandidateInvalid:
+            raise
+        except (ValueError, TypeError, KeyError, ArithmeticError, BrokerError,
+                requests.RequestException, TimeoutError) as exc:
+            raise CandidateInvalid('final live quote refresh failed: ' + type(exc).__name__) from exc
+
     def candidates(self, attempted_rounds=()):
         now = self.clock()
         markets = self.client.discover(now)
@@ -248,14 +267,16 @@ def main(argv=None):
             if client.readiness_reasons:
                 LOG.warning('New entries are blocked by quote policy; existing orders can still be reconciled')
             from scripts.workflow_gate import source_metadata
+            provider = None if args.reconcile_only else LiveCandidateProvider(
+                client, balance_precision=config.balance_precision)
             engine = LiveExecution(broker, state, persist_state=store.persist,
                 official_market=client.official_market, armed=bool(args.execute_live),
                 source=source_metadata()['source_sha'],
-                require_remote_durability=args.persist_to_github)
+                require_remote_durability=args.persist_to_github,
+                candidate_refresher=None if provider is None else provider.refresh_candidate)
             if args.reconcile_only:
                 engine.reconcile()
             else:
-                provider = LiveCandidateProvider(client, balance_precision=config.balance_precision)
                 deadline = time.monotonic() + config.duration
                 while time.monotonic() < deadline:
                     cycle = time.monotonic()

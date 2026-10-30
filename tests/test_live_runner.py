@@ -492,6 +492,8 @@ def test_runner_checks_cash_before_market_scan_even_without_candidates(
     class Provider:
         def __init__(self, *args, **kwargs):
             pass
+        def refresh_candidate(self, candidate):
+            return copy.deepcopy(candidate)
         def candidates(self, attempted):
             events.append('scan')
             return iter(())
@@ -562,6 +564,8 @@ def isolated_loop(tmp_path, monkeypatch, raised, *, quote_blockers=()):
     class Provider:
         def __init__(self, *args, **kwargs):
             pass
+        def refresh_candidate(self, candidate):
+            return copy.deepcopy(candidate)
         def candidates(self, attempted):
             yield {'synthetic': True}
     ticks = iter(range(100, 200))

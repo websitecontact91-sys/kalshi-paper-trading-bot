@@ -227,7 +227,8 @@ def verify_settlement(market, settlements, pending):
 
 class LiveExecution:
     def __init__(self, broker, state, *, persist_state, official_market, armed=False,
-                 clock=time.time, source="unknown", require_remote_durability=False):
+                 clock=time.time, source="unknown", require_remote_durability=False,
+                 candidate_refresher=None):
         validate(state)
         if state["account_scope"] != getattr(broker, "account_scope", None):
             raise LiveExecutionError("Live journal belongs to a different account/key scope")
@@ -235,6 +236,7 @@ class LiveExecution:
             raise TypeError("armed must be a boolean")
         self.broker, self.state = broker, copy.deepcopy(state)
         self.persist_state, self.official_market = persist_state, official_market
+        self.candidate_refresher = candidate_refresher
         self.armed, self.clock, self.source = armed, clock, source
         self.require_remote_durability = require_remote_durability
         self.source_update = None
@@ -365,6 +367,26 @@ class LiveExecution:
         except (KeyError, TypeError, ValueError, ArithmeticError, BrokerError) as exc:
             raise CandidateInvalid("Live candidate failed final validation: " + str(exc)) from exc
 
+    def _locked_candidate(self, candidate):
+        """Refresh the exact market and reject any executable quote drift.
+
+        The strategy treats 80-90c as a probability condition, not merely a
+        maximum willingness-to-pay. A normal buy limit may receive price
+        improvement below the band, so live execution minimizes stale-quote
+        exposure by requiring an unchanged qualifying selected-side quote
+        immediately before the durable intent and again immediately before POST.
+        """
+        if self.candidate_refresher is None:
+            return self._validate_candidate(candidate)
+        fresh = self._validate_candidate(self.candidate_refresher(copy.deepcopy(candidate)))
+        locked_fields = ("ticker", "side", "round_key", "close_time", "ask", "quantity",
+                         "budget", "debit", "payout", "principal", "fees",
+                         "fee_multiplier", "balance_precision", "worst_case_debit")
+        for field in locked_fields:
+            if str(fresh.get(field)) != str(candidate.get(field)):
+                raise CandidateInvalid("Live executable quote changed before submission: " + field)
+        return fresh
+
     def submit(self, candidate):
         if self.source_update is not None:
             return "SOURCE_UPDATE_HANDOFF"
@@ -400,8 +422,10 @@ class LiveExecution:
         except Exception as exc:
             self._event("LIVE_PREFLIGHT_UNAVAILABLE", reason=type(exc).__name__)
             return "BLOCKED_ACCOUNT_PREFLIGHT"
-        # All account reads and durable writes may consume the remaining window.
-        c = self._validate_candidate(c)
+        # Account reads can consume several seconds in the final minute. Re-read
+        # the exact selected market after those checks and require the same
+        # qualifying executable quote before reserving the round.
+        c = self._locked_candidate(c)
         pending = {key: c[key] for key in ("ticker", "side", "round_key", "close_time", "observation_time",
                     "ask", "quantity", "budget", "fee_multiplier", "balance_precision", "worst_case_debit")}
         pending.update(quoted_debit=c["debit"], quoted_payout=c["payout"], quoted_fees=c["fees"],
@@ -420,6 +444,12 @@ class LiveExecution:
             return "SOURCE_UPDATE_HANDOFF"
         if not in_entry_window(c["close_time"], self.clock()) or not observation_fresh(c["observation_time"], self.clock()):
             return self._finish_unfilled("NOT_SENT", "expired_after_durable_intent")
+        # The durable write itself may consume time. Refresh once more and
+        # require the exact same selected-side executable quote before POST.
+        try:
+            c = self._locked_candidate(c)
+        except CandidateInvalid:
+            return self._finish_unfilled("NOT_SENT", "price_lock_changed_after_durable_intent")
         submitted_at = iso(self.clock())
         try:
             ack = self.broker.submit_limit_buy(ticker=c["ticker"], side=c["side"], quantity=c["quantity"],
