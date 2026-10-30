@@ -1295,7 +1295,7 @@
       "worst_case_debit": "1.00"
     }
   ],
-  "mode": "RECONCILING",
+  "mode": "WAITING_FOR_SETTLEMENT",
   "pending": {
     "ask": "0.8400",
     "balance_precision": "0.01",
@@ -1304,7 +1304,31 @@
     "close_time": "2026-10-30T13:45:00Z",
     "current": "2.86068000",
     "distance_pct": "0.1028784983938356883411367024",
-    "execution": null,
+    "execution": {
+      "debit": "0.849500",
+      "displayed_multiplier": "1.18",
+      "fees": "0.009500",
+      "fill_ids": [
+        "0727b93b-1a09-8abd-a1ea-af663961a49a"
+      ],
+      "fills": [
+        {
+          "fees": "0.009500",
+          "fill_id": "0727b93b-1a09-8abd-a1ea-af663961a49a",
+          "filled_at": "2026-10-30T13:44:03.589244+00:00",
+          "is_taker": true,
+          "observed_at": "2026-10-30T13:44:05.111452+00:00",
+          "price": "0.8400",
+          "quantity": "1.00"
+        }
+      ],
+      "first_filled_at": "2026-10-30T13:44:03.589244+00:00",
+      "last_filled_at": "2026-10-30T13:44:03.589244+00:00",
+      "payout": "1.00",
+      "principal": "0.840000",
+      "quantity": "1.00",
+      "weighted_price": "0.8400"
+    },
     "fee_multiplier": "1",
     "observation_time": 1793367841.0,
     "order_id": "01a18d0d-a0b8-7fff-80ca-f0826874f657",
@@ -1320,7 +1344,7 @@
     "series_ticker": "KXNATGAS15M",
     "side": "YES",
     "source_sha": "e9e607ecbf1da7e6f79da5e066afd50e00a35c0f",
-    "stage": "ACKNOWLEDGED",
+    "stage": "FILLED",
     "submitted_at": "2026-10-30T13:44:03.576836+00:00",
     "target": "2.85774",
     "ticker": "KXNATGAS15M-26OCT300945-45",
