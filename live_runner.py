@@ -95,7 +95,7 @@ class LiveCandidateProvider:
                 quote = PayoutQuote(TRADE_BUDGET, debit, quantity)
                 candidate = Candidate(market['ticker'], side, ask, snapshot['current'],
                                       market['floor_strike'], quote, True)
-                if rejection_reason(candidate) is not None:
+                if rejection_reason(candidate) is not None or distance_pct(candidate) <= 0:
                     continue
                 values = {'ticker': candidate.ticker, 'side': side,
                     'series_ticker': series_of(market), 'round_key': round_key(market['close_time']),
