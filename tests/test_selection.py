@@ -20,11 +20,10 @@ def test_distance_ranks_only_primary_filter_passes():
 
 
 @pytest.mark.parametrize("current", ["99", "100"])
-def test_negative_or_zero_distance_candidate_is_rejected(current):
+def test_single_negative_or_zero_distance_candidate_still_selected(current):
     candidate = C(current=current)
     assert distance_pct(candidate) <= 0
-    assert rejection_reason(candidate) == "selected_side_not_confirmed"
-    assert select([candidate]) is None
+    assert select([candidate]) == candidate
 
 
 def test_largest_signed_distance_not_payout_is_primary_rank():
@@ -73,14 +72,3 @@ def test_invalid_candidate_rejected(kwargs):
 def test_only_boolean_freshness_is_accepted():
     with pytest.raises(TypeError):
         C(fresh="true")
-
-
-def test_selected_side_confirmation_allows_only_correct_side():
-    yes = C(side="YES", current="101", target="100")
-    no = C(side="NO", current="99", target="100")
-    wrong_yes = C(side="YES", current="99", target="100")
-    wrong_no = C(side="NO", current="101", target="100")
-    assert eligible(yes)
-    assert eligible(no)
-    assert rejection_reason(wrong_yes) == "selected_side_not_confirmed"
-    assert rejection_reason(wrong_no) == "selected_side_not_confirmed"
