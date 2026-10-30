@@ -1367,7 +1367,7 @@
     "execution": null,
     "fee_multiplier": "1",
     "observation_time": 1793369667.0,
-    "order_id": null,
+    "order_id": "01a18d29-8170-756a-8b5a-4aab1a3e0e49",
     "prepared_at": "2026-10-30T14:14:28.150655+00:00",
     "probability_field": "kalshi_orderbook:1-best_YES_bid",
     "quantity": "1.00",
@@ -1380,7 +1380,8 @@
     "series_ticker": "KXPALLADIUM15M",
     "side": "NO",
     "source_sha": "e9e607ecbf1da7e6f79da5e066afd50e00a35c0f",
-    "stage": "INTENT",
+    "stage": "ACKNOWLEDGED",
+    "submitted_at": "2026-10-30T14:14:30.291138+00:00",
     "target": "977.657",
     "ticker": "KXPALLADIUM15M-26OCT301015-15",
     "worst_case_debit": "1.00"
