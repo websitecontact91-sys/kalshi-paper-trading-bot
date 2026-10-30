@@ -644,7 +644,7 @@
     "execution": null,
     "fee_multiplier": "1",
     "observation_time": 1793351640.0,
-    "order_id": null,
+    "order_id": "01a18c16-6f78-78d4-b77b-cac75519691e",
     "prepared_at": "2026-10-30T09:14:01.819545+00:00",
     "probability_field": "kalshi_orderbook:1-best_YES_bid",
     "quantity": "1.00",
@@ -657,7 +657,8 @@
     "series_ticker": "KXUSDCAD15M",
     "side": "NO",
     "source_sha": "c594c71d740c31f2bcd6e597cce6005c92407071",
-    "stage": "INTENT",
+    "stage": "ACKNOWLEDGED",
+    "submitted_at": "2026-10-30T09:14:03.385747+00:00",
     "target": "1.39644",
     "ticker": "KXUSDCAD15M-26OCT300515-30",
     "worst_case_debit": "1.00"
