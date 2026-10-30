@@ -800,7 +800,7 @@
     "execution": null,
     "fee_multiplier": "1",
     "observation_time": 1793354339.0,
-    "order_id": null,
+    "order_id": "01a18c3f-9e70-7939-a342-34a668ec4526",
     "prepared_at": "2026-10-30T09:59:01.374628+00:00",
     "probability_field": "kalshi_orderbook:1-best_NO_bid",
     "quantity": "1.00",
@@ -813,7 +813,8 @@
     "series_ticker": "KXBRENT15M",
     "side": "YES",
     "source_sha": "c594c71d740c31f2bcd6e597cce6005c92407071",
-    "stage": "INTENT",
+    "stage": "ACKNOWLEDGED",
+    "submitted_at": "2026-10-30T09:59:02.935893+00:00",
     "target": "113.01",
     "ticker": "KXBRENT15M-26OCT300600-00",
     "worst_case_debit": "1.00"
