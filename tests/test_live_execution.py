@@ -22,10 +22,12 @@ class Clock:
 
 
 def candidate(clock, side="YES", **changes):
+    current = "101" if side == "YES" else "99"
     result = {"ticker": TICKER, "side": side, "round_key": round_key(CLOSE),
               "close_time": iso(CLOSE), "observation_time": clock(), "ask": ".89",
               "quantity": "1.00", "budget": "1.00", "debit": ".90", "payout": "1.00",
-              "principal": ".89", "fees": ".01", "fee_multiplier": "1", "balance_precision": ".01"}
+              "principal": ".89", "fees": ".01", "fee_multiplier": "1", "balance_precision": ".01",
+              "current": current, "target": "100"}
     result.update(changes)
     return result
 
