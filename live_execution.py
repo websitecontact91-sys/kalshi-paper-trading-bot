@@ -16,7 +16,8 @@ from live_state import (LiveStateError, execution_breaches, money, validate, app
                         FUNDS_POLICY, NON_HALTING_EXECUTION_WARNINGS, warning_only_halt)
 from payout_quote import PayoutQuote, ask_in_band, payout_eligible, as_decimal
 from quote_adapter import documented_taker_cost
-from timing import MAX_FUTURE_S, in_entry_window, observation_fresh, round_key, timestamp
+from timing import (MAX_FUTURE_S, entry_time_eligible, in_entry_window,
+                    observation_fresh, round_key, timestamp)
 from trade_config import TRADE_BUDGET
 
 FUNDS_CHECK_INTERVAL_SECONDS = 5
@@ -340,7 +341,7 @@ class LiveExecution:
             if c.get("round_key") != round_key(c["close_time"]):
                 raise ValueError("round")
             now = self.clock()
-            if not in_entry_window(c["close_time"], now) or not observation_fresh(c["observation_time"], now):
+            if not entry_time_eligible(c["close_time"], now) or not observation_fresh(c["observation_time"], now):
                 raise ValueError("entry_window_or_reference_expired")
             for field in ("ask", "quantity", "budget", "debit", "payout", "principal", "fees", "fee_multiplier"):
                 c[field] = str(as_decimal(c[field]))
@@ -442,7 +443,7 @@ class LiveExecution:
         self._commit(updated, "LIVE_INTENT_DURABLE")
         if self.source_update is not None:
             return "SOURCE_UPDATE_HANDOFF"
-        if not in_entry_window(c["close_time"], self.clock()) or not observation_fresh(c["observation_time"], self.clock()):
+        if not entry_time_eligible(c["close_time"], self.clock()) or not observation_fresh(c["observation_time"], self.clock()):
             return self._finish_unfilled("NOT_SENT", "expired_after_durable_intent")
         # The durable write itself may consume time. Refresh once more and
         # require the exact same selected-side executable quote before POST.
