@@ -914,7 +914,7 @@
       "worst_case_debit": "1.00"
     }
   ],
-  "mode": "RECONCILING",
+  "mode": "WAITING_FOR_SETTLEMENT",
   "pending": {
     "ask": "0.9000",
     "balance_precision": "0.01",
@@ -923,7 +923,31 @@
     "close_time": "2026-10-30T10:45:00Z",
     "current": "3980.03600000",
     "distance_pct": "0.01391753483780042656993058818",
-    "execution": null,
+    "execution": {
+      "debit": "0.906300",
+      "displayed_multiplier": "1.10",
+      "fees": "0.006300",
+      "fill_ids": [
+        "0727bdcd-cc21-a77a-e5de-8c994f72991f"
+      ],
+      "fills": [
+        {
+          "fees": "0.006300",
+          "fill_id": "0727bdcd-cc21-a77a-e5de-8c994f72991f",
+          "filled_at": "2026-10-30T10:44:30.075796+00:00",
+          "is_taker": true,
+          "observed_at": "2026-10-30T10:44:31.745069+00:00",
+          "price": "0.9000",
+          "quantity": "1.00"
+        }
+      ],
+      "first_filled_at": "2026-10-30T10:44:30.075796+00:00",
+      "last_filled_at": "2026-10-30T10:44:30.075796+00:00",
+      "payout": "1.00",
+      "principal": "0.900000",
+      "quantity": "1.00",
+      "weighted_price": "0.9000"
+    },
     "fee_multiplier": "1",
     "observation_time": 1793357067.0,
     "order_id": "01a18c69-3eb0-742f-9761-1656a1530f96",
@@ -939,7 +963,7 @@
     "series_ticker": "KXGOLD15M",
     "side": "NO",
     "source_sha": "c594c71d740c31f2bcd6e597cce6005c92407071",
-    "stage": "ACKNOWLEDGED",
+    "stage": "FILLED",
     "submitted_at": "2026-10-30T10:44:30.040677+00:00",
     "target": "3980.59",
     "ticker": "KXGOLD15M-26OCT300645-45",
