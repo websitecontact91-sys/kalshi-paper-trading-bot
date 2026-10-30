@@ -8,7 +8,8 @@ import pytest
 from live_broker import AmbiguousOrderError, OrderRejected, TradingDisabled
 from live_execution import (CandidateInvalid, LiveExecution, LiveExecutionError,
                             iso, normalize_execution, ReconciliationMismatch)
-from live_state import LiveStateError, load, new_state, save, validate, apply_balance, FUNDS_POLICY
+from live_state import (LiveStateError, load, new_state, save, validate, apply_balance, FUNDS_POLICY,
+                        execution_breaches, warning_only_halt)
 from timing import round_key
 
 CLOSE = 1800000000
@@ -818,3 +819,56 @@ def test_settlement_cannot_precede_the_last_of_multiple_fills(fx):
     fx.broker.settled[0]["settled_time"] = iso(CLOSE - 29)
     assert fx.engine.reconcile() == "HALTED"
     assert not fx.engine.state["history"] and fx.engine.state["pending"]
+
+
+def test_execution_price_deviation_is_warning_and_does_not_halt(fx):
+    """An eligible 81c quote filling at 79c is recorded but trading can continue."""
+    original = fx.broker.submit_limit_buy
+
+    def deviated_fill(**kwargs):
+        response = original(**kwargs)
+        side = kwargs["side"]
+        price = D(".79")
+        fee = D(".0117")
+        fx.broker.order["taker_fill_cost_dollars"] = str(price)
+        fx.broker.order["taker_fees_dollars"] = str(fee)
+        fill = fx.broker.executions[0]
+        fill["yes_price_dollars"] = str(price if side == "YES" else D("1") - price)
+        fill["no_price_dollars"] = str(price if side == "NO" else D("1") - price)
+        fill["fee_cost"] = str(fee)
+        return response
+
+    fx.broker.submit_limit_buy = deviated_fill
+    trade = candidate(fx.clock, ask=".81", principal=".81", fees=".02", debit=".83")
+    assert fx.engine.submit(trade) == "WAITING_FOR_SETTLEMENT"
+    state = load(fx.path)
+    assert state["mode"] == "WAITING_FOR_SETTLEMENT"
+    assert set(state["pending"]["risk_flags"]) == {
+        "fill_price_out_of_band", "actual_payout_multiple_out_of_band"
+    }
+    assert not execution_breaches(state["pending"])
+
+
+def test_legacy_warning_only_halt_recovers_without_erasing_history(fx):
+    fx.engine.submit(candidate(fx.clock))
+    fx.settle("yes")
+    assert fx.engine.reconcile() == "SCANNING"
+
+    state = load(fx.path)
+    state["history"][0]["risk_flags"] = [
+        "actual_payout_multiple_out_of_band", "fill_price_out_of_band"
+    ]
+    state["mode"] = "HALTED"
+    state["halt_reason"] = "actual_payout_multiple_out_of_band,fill_price_out_of_band"
+    assert warning_only_halt(state["halt_reason"])
+    save(fx.path, state)
+
+    before = load(fx.path)
+    engine = fx.restart(armed=True)
+    assert engine.check_funds(force=True) == "SCANNING"
+    after = load(fx.path)
+    assert after["mode"] == "SCANNING"
+    assert after["halt_reason"] is None
+    assert after["history"] == before["history"]
+    assert after["attempted_rounds"] == before["attempted_rounds"]
+    assert after["realized_pnl"] == before["realized_pnl"]
