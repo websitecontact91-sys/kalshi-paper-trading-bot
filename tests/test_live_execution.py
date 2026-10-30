@@ -872,3 +872,56 @@ def test_legacy_warning_only_halt_recovers_without_erasing_history(fx):
     assert after["history"] == before["history"]
     assert after["attempted_rounds"] == before["attempted_rounds"]
     assert after["realized_pnl"] == before["realized_pnl"]
+
+
+def test_price_lock_blocks_candidate_that_drops_below_band_before_intent(fx):
+    calls = []
+    def refresher(original):
+        calls.append("refresh")
+        return candidate(fx.clock, ask=".79", principal=".79", fees=".02", debit=".81")
+    engine = fx.restart(armed=True, candidate_refresher=refresher)
+    with pytest.raises(CandidateInvalid, match="strategy|quote changed|validation"):
+        engine.submit(candidate(fx.clock, ask=".81", principal=".81", fees=".02", debit=".83"))
+    assert calls == ["refresh"]
+    assert not fx.broker.posts
+    assert load(fx.path)["attempted_rounds"] == []
+
+
+def test_price_lock_blocks_extreme_xrp_style_drop_before_intent(fx):
+    def refresher(original):
+        return candidate(fx.clock, ask=".29", principal=".29", fees=".02", debit=".31")
+    engine = fx.restart(armed=True, candidate_refresher=refresher)
+    with pytest.raises(CandidateInvalid):
+        engine.submit(candidate(fx.clock, ask=".81", principal=".81", fees=".02", debit=".83"))
+    assert not fx.broker.posts
+    assert load(fx.path)["pending"] is None
+
+
+def test_second_price_lock_cancels_after_durable_intent_if_quote_moves(fx):
+    calls = []
+    def refresher(original):
+        calls.append("refresh")
+        if len(calls) == 1:
+            return copy.deepcopy(original)
+        return candidate(fx.clock, ask=".79", principal=".79", fees=".02", debit=".81")
+    engine = fx.restart(armed=True, candidate_refresher=refresher)
+    result = engine.submit(candidate(fx.clock, ask=".81", principal=".81", fees=".02", debit=".83"))
+    assert result == "SCANNING"
+    assert calls == ["refresh", "refresh"]
+    assert not fx.broker.posts
+    state = load(fx.path)
+    assert state["pending"] is None
+    assert state["attempts"][-1]["outcome"] == "NOT_SENT"
+    assert state["attempts"][-1]["reason"] == "price_lock_changed_after_durable_intent"
+
+
+def test_unchanged_price_lock_allows_normal_submission(fx):
+    calls = []
+    def refresher(original):
+        calls.append("refresh")
+        return copy.deepcopy(original)
+    engine = fx.restart(armed=True, candidate_refresher=refresher)
+    result = engine.submit(candidate(fx.clock))
+    assert result == "WAITING_FOR_SETTLEMENT"
+    assert calls == ["refresh", "refresh"]
+    assert len(fx.broker.posts) == 1
