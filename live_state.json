@@ -1751,7 +1751,7 @@
     "execution": null,
     "fee_multiplier": "1",
     "observation_time": 1793380449.0,
-    "order_id": null,
+    "order_id": "01a18dce-02b8-7848-a964-7d4847539918",
     "prepared_at": "2026-10-30T17:14:09.491467+00:00",
     "probability_field": "kalshi_orderbook:1-best_NO_bid",
     "quantity": "1.00",
@@ -1764,7 +1764,8 @@
     "series_ticker": "KXEURUSD15M",
     "side": "YES",
     "source_sha": "e9e607ecbf1da7e6f79da5e066afd50e00a35c0f",
-    "stage": "INTENT",
+    "stage": "ACKNOWLEDGED",
+    "submitted_at": "2026-10-30T17:14:11.328658+00:00",
     "target": "1.11574",
     "ticker": "KXEURUSD15M-26OCT301315-30",
     "worst_case_debit": "1.00"
