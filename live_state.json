@@ -1,6 +1,6 @@
 {
   "account_cash": "20.3955",
-  "account_cash_checked_at": "2026-10-30T10:29:05.179857+00:00",
+  "account_cash_checked_at": "2026-10-30T10:44:28.237647+00:00",
   "account_scope": "production:0:31c8bad33d4eb70d",
   "attempted_rounds": [
     "1992567",
@@ -21,7 +21,8 @@
     "1992615",
     "1992616",
     "1992617",
-    "1992618"
+    "1992618",
+    "1992619"
   ],
   "attempts": [
     {
@@ -913,8 +914,36 @@
       "worst_case_debit": "1.00"
     }
   ],
-  "mode": "SCANNING",
-  "pending": null,
+  "mode": "RECONCILING",
+  "pending": {
+    "ask": "0.9000",
+    "balance_precision": "0.01",
+    "budget": "1.00",
+    "client_order_id": "fc4847e8-72e8-5787-a0df-f7fc7d3bb782",
+    "close_time": "2026-10-30T10:45:00Z",
+    "current": "3980.03600000",
+    "distance_pct": "0.01391753483780042656993058818",
+    "execution": null,
+    "fee_multiplier": "1",
+    "observation_time": 1793357067.0,
+    "order_id": null,
+    "prepared_at": "2026-10-30T10:44:28.388819+00:00",
+    "probability_field": "kalshi_orderbook:1-best_YES_bid",
+    "quantity": "1.00",
+    "quoted_debit": "0.91",
+    "quoted_fees": "0.010000",
+    "quoted_payout": "1.00",
+    "quoted_principal": "0.900000",
+    "risk_flags": [],
+    "round_key": "1992619",
+    "series_ticker": "KXGOLD15M",
+    "side": "NO",
+    "source_sha": "c594c71d740c31f2bcd6e597cce6005c92407071",
+    "stage": "INTENT",
+    "target": "3980.59",
+    "ticker": "KXGOLD15M-26OCT300645-45",
+    "worst_case_debit": "1.00"
+  },
   "realized_pnl": "0.545600",
   "schema": "kalshi-live.v1",
   "session_id": "2c127708-6f99-4d8c-8197-4de798ce4966",
