@@ -107,12 +107,10 @@ def test_live_quotes_rank_by_signed_distance_before_payout_multiple():
     assert D(selected[0]['exact_multiplier']) < D(selected[1]['exact_multiplier'])
 
 
-def test_live_rank_tie_uses_exact_multiple_and_does_not_require_positive_distance():
+def test_live_rejects_candidates_on_wrong_side_of_strike():
     provider, _ = candidates([snapshot('KXBTC15M-TEST', current='99', price='.89'),
                               snapshot('KXETH15M-TEST', current='99', price='.85')])
-    selected = list(provider.candidates())
-    assert [x['ticker'] for x in selected] == ['KXETH15M-TEST', 'KXBTC15M-TEST']
-    assert all(D(x['distance_pct']) == D('-1') for x in selected)
+    assert list(provider.candidates()) == []
 
 
 def test_no_distance_uses_target_minus_current_and_retains_outcome_ask():
@@ -123,7 +121,7 @@ def test_no_distance_uses_target_minus_current_and_retains_outcome_ask():
     assert D(selected['distance_pct']) == D('1')
 
 
-@pytest.mark.parametrize('remaining,expected', [(61, False), (60, True), (1, True), (0, False), (-1, False)])
+@pytest.mark.parametrize('remaining,expected', [(61, False), (60, True), (10, True), (9.9, False), (1, False), (0, False), (-1, False)])
 def test_provider_obeys_final_minute_boundaries(remaining, expected):
     provider, _ = candidates([snapshot(remaining=remaining)])
     assert bool(list(provider.candidates())) is expected
