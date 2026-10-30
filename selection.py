@@ -49,8 +49,6 @@ def rejection_reason(candidate):
         return "ask_out_of_band"
     if not payout_eligible(candidate.quote):
         return "payout_out_of_band"
-    if distance_pct(candidate) <= 0:
-        return "selected_side_not_confirmed"
     return None
 
 
