@@ -632,7 +632,7 @@
       "worst_case_debit": "1.00"
     }
   ],
-  "mode": "RECONCILING",
+  "mode": "WAITING_FOR_SETTLEMENT",
   "pending": {
     "ask": "0.8300",
     "balance_precision": "0.01",
@@ -641,7 +641,31 @@
     "close_time": "2026-10-30T09:15:00Z",
     "current": "1.39637000",
     "distance_pct": "0.005012746698748245538655438114",
-    "execution": null,
+    "execution": {
+      "debit": "0.714700",
+      "displayed_multiplier": "1.40",
+      "fees": "0.014700",
+      "fill_ids": [
+        "0727bc4f-d299-9025-62c0-9c05544f142f"
+      ],
+      "fills": [
+        {
+          "fees": "0.014700",
+          "fill_id": "0727bc4f-d299-9025-62c0-9c05544f142f",
+          "filled_at": "2026-10-30T09:14:03.401695+00:00",
+          "is_taker": true,
+          "observed_at": "2026-10-30T09:14:04.972222+00:00",
+          "price": "0.7000",
+          "quantity": "1.00"
+        }
+      ],
+      "first_filled_at": "2026-10-30T09:14:03.401695+00:00",
+      "last_filled_at": "2026-10-30T09:14:03.401695+00:00",
+      "payout": "1.00",
+      "principal": "0.700000",
+      "quantity": "1.00",
+      "weighted_price": "0.7000"
+    },
     "fee_multiplier": "1",
     "observation_time": 1793351640.0,
     "order_id": "01a18c16-6f78-78d4-b77b-cac75519691e",
@@ -652,12 +676,15 @@
     "quoted_fees": "0.010000",
     "quoted_payout": "1.00",
     "quoted_principal": "0.830000",
-    "risk_flags": [],
+    "risk_flags": [
+      "actual_payout_multiple_out_of_band",
+      "fill_price_out_of_band"
+    ],
     "round_key": "1992613",
     "series_ticker": "KXUSDCAD15M",
     "side": "NO",
     "source_sha": "c594c71d740c31f2bcd6e597cce6005c92407071",
-    "stage": "ACKNOWLEDGED",
+    "stage": "FILLED",
     "submitted_at": "2026-10-30T09:14:03.385747+00:00",
     "target": "1.39644",
     "ticker": "KXUSDCAD15M-26OCT300515-30",
