@@ -788,7 +788,7 @@
       "worst_case_debit": "1.00"
     }
   ],
-  "mode": "RECONCILING",
+  "mode": "WAITING_FOR_SETTLEMENT",
   "pending": {
     "ask": "0.8700",
     "balance_precision": "0.01",
@@ -797,7 +797,31 @@
     "close_time": "2026-10-30T10:00:00Z",
     "current": "113.07825000",
     "distance_pct": "0.06039288558534642951951154765",
-    "execution": null,
+    "execution": {
+      "debit": "0.839900",
+      "displayed_multiplier": "1.19",
+      "fees": "0.009900",
+      "fill_ids": [
+        "0727bcc1-e7b1-9d10-1cc7-c4eea75ac90d"
+      ],
+      "fills": [
+        {
+          "fees": "0.009900",
+          "fill_id": "0727bcc1-e7b1-9d10-1cc7-c4eea75ac90d",
+          "filled_at": "2026-10-30T09:59:02.959179+00:00",
+          "is_taker": true,
+          "observed_at": "2026-10-30T09:59:04.524513+00:00",
+          "price": "0.8300",
+          "quantity": "1.00"
+        }
+      ],
+      "first_filled_at": "2026-10-30T09:59:02.959179+00:00",
+      "last_filled_at": "2026-10-30T09:59:02.959179+00:00",
+      "payout": "1.00",
+      "principal": "0.830000",
+      "quantity": "1.00",
+      "weighted_price": "0.8300"
+    },
     "fee_multiplier": "1",
     "observation_time": 1793354339.0,
     "order_id": "01a18c3f-9e70-7939-a342-34a668ec4526",
@@ -813,7 +837,7 @@
     "series_ticker": "KXBRENT15M",
     "side": "YES",
     "source_sha": "c594c71d740c31f2bcd6e597cce6005c92407071",
-    "stage": "ACKNOWLEDGED",
+    "stage": "FILLED",
     "submitted_at": "2026-10-30T09:59:02.935893+00:00",
     "target": "113.01",
     "ticker": "KXBRENT15M-26OCT300600-00",
