@@ -5,6 +5,7 @@ import math
 MAX_OBS_AGE_S = 15
 MAX_FUTURE_S = 5
 ENTRY_WINDOW_S = 60
+MIN_ENTRY_SECONDS_REMAINING = 10
 ROUND_SECONDS = 900
 
 def timestamp(value):
@@ -31,6 +32,10 @@ def seconds_to_close(close_time, now):
 
 def in_entry_window(close_time, now):
     return 0 < seconds_to_close(close_time, now) <= ENTRY_WINDOW_S
+
+def entry_time_eligible(close_time, now):
+    remaining = seconds_to_close(close_time, now)
+    return MIN_ENTRY_SECONDS_REMAINING <= remaining <= ENTRY_WINDOW_S
 
 def round_key(close_time):
     return str(math.ceil(timestamp(close_time) / ROUND_SECONDS))

@@ -22,10 +22,12 @@ class Clock:
 
 
 def candidate(clock, side="YES", **changes):
+    current = "101" if side == "YES" else "99"
     result = {"ticker": TICKER, "side": side, "round_key": round_key(CLOSE),
               "close_time": iso(CLOSE), "observation_time": clock(), "ask": ".89",
               "quantity": "1.00", "budget": "1.00", "debit": ".90", "payout": "1.00",
-              "principal": ".89", "fees": ".01", "fee_multiplier": "1", "balance_precision": ".01"}
+              "principal": ".89", "fees": ".01", "fee_multiplier": "1", "balance_precision": ".01",
+              "current": current, "target": "100"}
     result.update(changes)
     return result
 
@@ -158,7 +160,7 @@ def test_intent_is_durable_before_first_post_and_ack_is_not_a_cash_fill(fx, side
     assert D(actual["debit"]) == D(".90") and D(actual["fees"]) == D(".01")
 
 
-@pytest.mark.parametrize("remaining,allowed", [(61, False), (60, True), (1, True), (0, False), (-1, False)])
+@pytest.mark.parametrize("remaining,allowed", [(61, False), (60, True), (10, True), (9.9, False), (1, False), (0, False), (-1, False)])
 def test_exact_entry_window(fx, remaining, allowed):
     fx.clock.now = CLOSE - remaining
     if allowed:
@@ -205,7 +207,7 @@ def test_preflight_latency_requires_another_window_and_freshness_check(fx):
 
 
 def test_persistence_latency_cannot_submit_after_close(fx):
-    fx.clock.now = CLOSE - 1
+    fx.clock.now = CLOSE - 10
     def slow(state):
         receipt = fx.persist(state)
         fx.clock.now = CLOSE + 1
@@ -925,3 +927,11 @@ def test_unchanged_price_lock_allows_normal_submission(fx):
     assert result == "WAITING_FOR_SETTLEMENT"
     assert calls == ["refresh", "refresh"]
     assert len(fx.broker.posts) == 1
+
+
+def test_five_year_style_wrong_side_candidate_never_submits(fx):
+    trade = candidate(fx.clock)
+    trade.update(current="4.70205221", target="4.70117", side="NO")
+    with pytest.raises(CandidateInvalid):
+        fx.engine.submit(trade)
+    assert not fx.broker.posts

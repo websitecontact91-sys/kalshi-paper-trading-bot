@@ -1,5 +1,5 @@
 import pytest
-from timing import in_entry_window, observation_fresh, round_key, seconds_to_close, timestamp
+from timing import entry_time_eligible, in_entry_window, observation_fresh, round_key, seconds_to_close, timestamp
 
 @pytest.mark.parametrize('remaining,allowed', [(61,False),(60,True),(52.9,True),(1,True),(0,False),(-1,False)])
 def test_entry_boundaries(remaining, allowed):
@@ -17,3 +17,8 @@ def test_reference_freshness(age, allowed):
 def test_bad_times_fail_closed():
     for bad in (None,float('nan'),float('inf'),'bad'):
         assert not observation_fresh(bad,100)
+
+
+@pytest.mark.parametrize('remaining,allowed', [(60,True),(10,True),(9.999,False),(1,False),(0,False),(-1,False)])
+def test_new_entry_requires_at_least_ten_seconds_remaining(remaining, allowed):
+    assert entry_time_eligible(1800000000, 1800000000-remaining) is allowed
