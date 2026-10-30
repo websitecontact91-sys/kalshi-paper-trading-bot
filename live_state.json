@@ -926,7 +926,7 @@
     "execution": null,
     "fee_multiplier": "1",
     "observation_time": 1793357067.0,
-    "order_id": null,
+    "order_id": "01a18c69-3eb0-742f-9761-1656a1530f96",
     "prepared_at": "2026-10-30T10:44:28.388819+00:00",
     "probability_field": "kalshi_orderbook:1-best_YES_bid",
     "quantity": "1.00",
@@ -939,7 +939,8 @@
     "series_ticker": "KXGOLD15M",
     "side": "NO",
     "source_sha": "c594c71d740c31f2bcd6e597cce6005c92407071",
-    "stage": "INTENT",
+    "stage": "ACKNOWLEDGED",
+    "submitted_at": "2026-10-30T10:44:30.040677+00:00",
     "target": "3980.59",
     "ticker": "KXGOLD15M-26OCT300645-45",
     "worst_case_debit": "1.00"
