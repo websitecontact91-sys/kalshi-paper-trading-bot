@@ -20,6 +20,7 @@ from trade_config import TRADE_BUDGET
 
 SCHEMA = "kalshi-live.v1"
 FUNDS_POLICY = "continue_until_insufficient_funds.v1"
+NON_HALTING_EXECUTION_WARNINGS = frozenset({"fill_price_out_of_band", "actual_payout_multiple_out_of_band"})
 MODES = {"SCANNING", "RECONCILING", "WAITING_FOR_SETTLEMENT", "HALTED", "STOPPED"}
 
 
@@ -137,12 +138,20 @@ def _execution(execution):
     return values
 
 
+def warning_only_halt(reason):
+    """True when a legacy halt contains only non-blocking execution-price warnings."""
+    if not reason:
+        return False
+    flags = {item for item in str(reason).split(",") if item}
+    return bool(flags) and flags <= NON_HALTING_EXECUTION_WARNINGS
+
+
 def execution_breaches(record):
-    """Derive lasting execution breaches from immutable journal evidence."""
+    """Derive lasting execution breaches; price/multiplier deviations remain warnings only."""
     flags = record.get("risk_flags", [])
     if not isinstance(flags, list) or any(not isinstance(x, str) or not x for x in flags):
         raise LiveStateError("Invalid execution risk flags")
-    breaches = set(flags)
+    breaches = set(flags) - NON_HALTING_EXECUTION_WARNINGS
     execution = record.get("execution")
     if execution is None:
         return breaches
@@ -152,16 +161,16 @@ def execution_breaches(record):
     if actual["debit"] > min(TRADE_BUDGET, money(record.get("budget"), "budget")):
         breaches.add("actual_debit_exceeds_budget")
     quote = PayoutQuote(max(TRADE_BUDGET, actual["debit"]), actual["debit"], actual["payout"])
-    if not payout_eligible(quote):
-        breaches.add("actual_payout_multiple_out_of_band")
+    # Actual price/multiplier deviations are retained in risk_flags as warnings,
+    # but they do not create a lasting execution-integrity breach.
     earliest = max(timestamp(record.get("prepared_at")),
                    timestamp(record.get("submitted_at", record.get("prepared_at"))))
     for fill in execution["fills"]:
         price, at = money(fill["price"]), timestamp(fill["filled_at"])
         if price > money(record.get("ask")):
             breaches.add("fill_exceeds_limit")
-        if not ask_in_band(price):
-            breaches.add("fill_price_out_of_band")
+        # A fill outside the strategy entry-price band is a warning, not a halt.
+        # The candidate still had to be eligible immediately before submission.
         if not in_entry_window(record["close_time"], at):
             breaches.add("fill_outside_final_minute")
         if at < earliest:
@@ -286,8 +295,12 @@ def apply_balance(state, cash, checked_at):
                    funds_policy=FUNDS_POLICY, stop_reason=None)
     records = updated["history"] + updated["attempts"] + ([updated["pending"]] if updated.get("pending") else [])
     breaches = any(execution_breaches(item) for item in records)
-    if updated.get("halt_reason") or breaches:
-        updated.update(mode="HALTED", halt_reason=updated.get("halt_reason") or "historical_execution_breach")
+    halt_reason = updated.get("halt_reason")
+    if warning_only_halt(halt_reason):
+        halt_reason = None
+        updated["halt_reason"] = None
+    if halt_reason or breaches:
+        updated.update(mode="HALTED", halt_reason=halt_reason or "historical_execution_breach")
     elif updated.get("pending") is None:
         if cash < TRADE_BUDGET:
             updated.update(mode="STOPPED", stop_reason="insufficient_funds")
