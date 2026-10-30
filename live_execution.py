@@ -12,7 +12,8 @@ import time
 import uuid
 
 from live_broker import BrokerError, OrderRejected, TradingDisabled, worst_case_debit
-from live_state import LiveStateError, execution_breaches, money, validate, apply_balance, FUNDS_POLICY
+from live_state import (LiveStateError, execution_breaches, money, validate, apply_balance,
+                        FUNDS_POLICY, NON_HALTING_EXECUTION_WARNINGS, warning_only_halt)
 from payout_quote import PayoutQuote, ask_in_band, payout_eligible, as_decimal
 from quote_adapter import documented_taker_cost
 from timing import MAX_FUTURE_S, in_entry_window, observation_fresh, round_key, timestamp
@@ -280,8 +281,11 @@ class LiveExecution:
             return "SOURCE_UPDATE_HANDOFF"
         if self.state.get("pending") is not None:
             return self.state["mode"]
-        if self.state.get("halt_reason") or any(execution_breaches(item) for item in self.state["history"] + self.state["attempts"]):
-            return self._halt(self.state.get("halt_reason") or "historical_execution_breach")
+        halt_reason = self.state.get("halt_reason")
+        if halt_reason and not warning_only_halt(halt_reason):
+            return self._halt(halt_reason)
+        if any(execution_breaches(item) for item in self.state["history"] + self.state["attempts"]):
+            return self._halt("historical_execution_breach")
         validate(self.state)
         now = self.clock()
         if (not force and self._funds_check_ok and self._last_funds_check is not None
@@ -494,9 +498,11 @@ class LiveExecution:
                            risk_flags=sorted(set(pending.get("risk_flags", []) + flags)))
             updated = copy.deepcopy(self.state)
             updated["pending"] = pending
-            if flags or updated.get("halt_reason"):
-                updated.update(mode="HALTED", halt_reason=updated.get("halt_reason") or ",".join(flags))
+            blocking_flags = sorted(set(flags) - NON_HALTING_EXECUTION_WARNINGS)
+            if blocking_flags or (updated.get("halt_reason") and not warning_only_halt(updated.get("halt_reason"))):
+                updated.update(mode="HALTED", halt_reason=updated.get("halt_reason") or ",".join(blocking_flags))
             else:
+                updated["halt_reason"] = None
                 updated["mode"] = "WAITING_FOR_SETTLEMENT"
             if updated != self.state:
                 self._commit(updated, "LIVE_FILLS_VERIFIED")
