@@ -207,7 +207,7 @@ def test_preflight_latency_requires_another_window_and_freshness_check(fx):
 
 
 def test_persistence_latency_cannot_submit_after_close(fx):
-    fx.clock.now = CLOSE - 1
+    fx.clock.now = CLOSE - 10
     def slow(state):
         receipt = fx.persist(state)
         fx.clock.now = CLOSE + 1
