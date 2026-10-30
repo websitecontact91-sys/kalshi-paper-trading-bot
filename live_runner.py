@@ -24,7 +24,7 @@ from live_state import new_state, apply_balance
 from payout_quote import PayoutQuote, as_decimal
 from quote_adapter import documented_taker_cost
 from selection import Candidate, distance_pct, rank, rejection_reason
-from timing import in_entry_window, observation_fresh, round_key, seconds_to_close
+from timing import entry_time_eligible, in_entry_window, observation_fresh, round_key, seconds_to_close
 from trade_config import TRADE_BUDGET
 from universe import UNIVERSE, series_of
 
@@ -73,7 +73,7 @@ class LiveCandidateProvider:
         if (not snapshot.get('compatible') or not snapshot.get('quote_ready')
                 or market.get('status') not in ('open', 'active')
                 or series_of(market) not in UNIVERSE
-                or not in_entry_window(market['close_time'], now)
+                or not entry_time_eligible(market['close_time'], now)
                 or not observation_fresh(snapshot.get('observation_time'), now)):
             return []
         result = []
@@ -162,7 +162,7 @@ class LiveCandidateProvider:
                 lookup[(candidate.ticker, candidate.side)] = snapshot['market']
         for ranked in rank(choices):
             market = lookup[(ranked.ticker, ranked.side)]
-            if not in_entry_window(market['close_time'], self.clock()):
+            if not entry_time_eligible(market['close_time'], self.clock()):
                 continue
             try:
                 fresh = self.client.snapshot(market, self.clock(), include_quotes=True)
