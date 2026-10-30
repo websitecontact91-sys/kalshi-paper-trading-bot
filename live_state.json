@@ -2009,7 +2009,7 @@
     "execution": null,
     "fee_multiplier": "1",
     "observation_time": 1793386741.0,
-    "order_id": null,
+    "order_id": "01a18e2e-00f0-7492-a35a-ddc0ae13b5e4",
     "prepared_at": "2026-10-30T18:59:01.312025+00:00",
     "probability_field": "kalshi_orderbook:1-best_NO_bid",
     "quantity": "1.00",
@@ -2022,7 +2022,8 @@
     "series_ticker": "KXNATGAS15M",
     "side": "YES",
     "source_sha": "e9e607ecbf1da7e6f79da5e066afd50e00a35c0f",
-    "stage": "INTENT",
+    "stage": "ACKNOWLEDGED",
+    "submitted_at": "2026-10-30T18:59:02.613353+00:00",
     "target": "2.89897",
     "ticker": "KXNATGAS15M-26OCT301500-00",
     "worst_case_debit": "1.00"
