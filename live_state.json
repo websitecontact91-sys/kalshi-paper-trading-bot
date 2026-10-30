@@ -1,6 +1,6 @@
 {
-  "account_cash": "19.8329",
-  "account_cash_checked_at": "2026-10-30T18:59:01.192751+00:00",
+  "account_cash": "19.9455",
+  "account_cash_checked_at": "2026-10-30T19:00:39.360705+00:00",
   "account_scope": "production:0:31c8bad33d4eb70d",
   "attempted_rounds": [
     "1992567",
@@ -1995,64 +1995,70 @@
       "ticker": "KXEURUSD15M-26OCT301315-30",
       "won": true,
       "worst_case_debit": "1.00"
+    },
+    {
+      "ask": "0.8800",
+      "balance_precision": "0.01",
+      "budget": "1.00",
+      "cash_payout": "1",
+      "client_order_id": "2ef708d3-75fa-5ea0-a245-9b6c65bc5b7f",
+      "close_time": "2026-10-30T19:00:00Z",
+      "current": "2.90070000",
+      "distance_pct": "0.05967636781339579229864400115",
+      "execution": {
+        "debit": "0.887400",
+        "displayed_multiplier": "1.13",
+        "fees": "0.007400",
+        "fill_ids": [
+          "0727b695-fae1-a8a7-35ba-e7d36db9bd06"
+        ],
+        "fills": [
+          {
+            "fees": "0.007400",
+            "fill_id": "0727b695-fae1-a8a7-35ba-e7d36db9bd06",
+            "filled_at": "2026-10-30T18:59:02.624686+00:00",
+            "is_taker": true,
+            "observed_at": "2026-10-30T18:59:03.992917+00:00",
+            "price": "0.8800",
+            "quantity": "1.00"
+          }
+        ],
+        "first_filled_at": "2026-10-30T18:59:02.624686+00:00",
+        "last_filled_at": "2026-10-30T18:59:02.624686+00:00",
+        "payout": "1.00",
+        "principal": "0.880000",
+        "quantity": "1.00",
+        "weighted_price": "0.8800"
+      },
+      "fee_multiplier": "1",
+      "observation_time": 1793386741.0,
+      "order_id": "01a18e2e-00f0-7492-a35a-ddc0ae13b5e4",
+      "pnl": "0.112600",
+      "prepared_at": "2026-10-30T18:59:01.312025+00:00",
+      "probability_field": "kalshi_orderbook:1-best_NO_bid",
+      "quantity": "1.00",
+      "quoted_debit": "0.89",
+      "quoted_fees": "0.010000",
+      "quoted_payout": "1.00",
+      "quoted_principal": "0.880000",
+      "result": "YES",
+      "risk_flags": [],
+      "round_key": "1992652",
+      "series_ticker": "KXNATGAS15M",
+      "settled_at": "2026-10-30T19:00:28.599132+00:00",
+      "side": "YES",
+      "source_sha": "e9e607ecbf1da7e6f79da5e066afd50e00a35c0f",
+      "stage": "SETTLED",
+      "submitted_at": "2026-10-30T18:59:02.613353+00:00",
+      "target": "2.89897",
+      "ticker": "KXNATGAS15M-26OCT301500-00",
+      "won": true,
+      "worst_case_debit": "1.00"
     }
   ],
-  "mode": "WAITING_FOR_SETTLEMENT",
-  "pending": {
-    "ask": "0.8800",
-    "balance_precision": "0.01",
-    "budget": "1.00",
-    "client_order_id": "2ef708d3-75fa-5ea0-a245-9b6c65bc5b7f",
-    "close_time": "2026-10-30T19:00:00Z",
-    "current": "2.90070000",
-    "distance_pct": "0.05967636781339579229864400115",
-    "execution": {
-      "debit": "0.887400",
-      "displayed_multiplier": "1.13",
-      "fees": "0.007400",
-      "fill_ids": [
-        "0727b695-fae1-a8a7-35ba-e7d36db9bd06"
-      ],
-      "fills": [
-        {
-          "fees": "0.007400",
-          "fill_id": "0727b695-fae1-a8a7-35ba-e7d36db9bd06",
-          "filled_at": "2026-10-30T18:59:02.624686+00:00",
-          "is_taker": true,
-          "observed_at": "2026-10-30T18:59:03.992917+00:00",
-          "price": "0.8800",
-          "quantity": "1.00"
-        }
-      ],
-      "first_filled_at": "2026-10-30T18:59:02.624686+00:00",
-      "last_filled_at": "2026-10-30T18:59:02.624686+00:00",
-      "payout": "1.00",
-      "principal": "0.880000",
-      "quantity": "1.00",
-      "weighted_price": "0.8800"
-    },
-    "fee_multiplier": "1",
-    "observation_time": 1793386741.0,
-    "order_id": "01a18e2e-00f0-7492-a35a-ddc0ae13b5e4",
-    "prepared_at": "2026-10-30T18:59:01.312025+00:00",
-    "probability_field": "kalshi_orderbook:1-best_NO_bid",
-    "quantity": "1.00",
-    "quoted_debit": "0.89",
-    "quoted_fees": "0.010000",
-    "quoted_payout": "1.00",
-    "quoted_principal": "0.880000",
-    "risk_flags": [],
-    "round_key": "1992652",
-    "series_ticker": "KXNATGAS15M",
-    "side": "YES",
-    "source_sha": "e9e607ecbf1da7e6f79da5e066afd50e00a35c0f",
-    "stage": "FILLED",
-    "submitted_at": "2026-10-30T18:59:02.613353+00:00",
-    "target": "2.89897",
-    "ticker": "KXNATGAS15M-26OCT301500-00",
-    "worst_case_debit": "1.00"
-  },
-  "realized_pnl": "-0.017000",
+  "mode": "SCANNING",
+  "pending": null,
+  "realized_pnl": "0.095600",
   "schema": "kalshi-live.v1",
   "session_id": "2c127708-6f99-4d8c-8197-4de798ce4966",
   "stop_reason": null
