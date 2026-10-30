@@ -1,6 +1,6 @@
 {
   "account_cash": "19.3257",
-  "account_cash_checked_at": "2026-10-30T12:15:15.639216+00:00",
+  "account_cash_checked_at": "2026-10-30T13:14:00.866244+00:00",
   "account_scope": "production:0:31c8bad33d4eb70d",
   "attempted_rounds": [
     "1992567",
@@ -28,7 +28,8 @@
     "1992622",
     "1992623",
     "1992624",
-    "1992625"
+    "1992625",
+    "1992629"
   ],
   "attempts": [
     {
@@ -1228,8 +1229,36 @@
       "worst_case_debit": "1.00"
     }
   ],
-  "mode": "SCANNING",
-  "pending": null,
+  "mode": "RECONCILING",
+  "pending": {
+    "ask": "0.8100",
+    "balance_precision": "0.01",
+    "budget": "1.00",
+    "client_order_id": "61e03199-25e5-5b15-a946-be834d96cf59",
+    "close_time": "2026-10-30T13:15:00Z",
+    "current": "112.85173000",
+    "distance_pct": "0.06045873184555437477860432164",
+    "execution": null,
+    "fee_multiplier": "1",
+    "observation_time": 1793366040.0,
+    "order_id": null,
+    "prepared_at": "2026-10-30T13:14:01.024379+00:00",
+    "probability_field": "kalshi_orderbook:1-best_YES_bid",
+    "quantity": "1.00",
+    "quoted_debit": "0.83",
+    "quoted_fees": "0.020000",
+    "quoted_payout": "1.00",
+    "quoted_principal": "0.810000",
+    "risk_flags": [],
+    "round_key": "1992629",
+    "series_ticker": "KXBRENT15M",
+    "side": "NO",
+    "source_sha": "e9e607ecbf1da7e6f79da5e066afd50e00a35c0f",
+    "stage": "INTENT",
+    "target": "112.92",
+    "ticker": "KXBRENT15M-26OCT300915-15",
+    "worst_case_debit": "1.00"
+  },
   "realized_pnl": "-0.524200",
   "schema": "kalshi-live.v1",
   "session_id": "2c127708-6f99-4d8c-8197-4de798ce4966",
