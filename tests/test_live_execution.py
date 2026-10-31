@@ -25,7 +25,7 @@ def candidate(clock, side="YES", **changes):
     current = "101" if side == "YES" else "99"
     result = {"ticker": TICKER, "side": side, "round_key": round_key(CLOSE),
               "close_time": iso(CLOSE), "observation_time": clock(), "ask": ".89",
-              "quantity": "1.00", "budget": "1.00", "debit": ".90", "payout": "1.00",
+              "quantity": "1.00", "budget": "5.00", "debit": ".90", "payout": "1.00",
               "principal": ".89", "fees": ".01", "fee_multiplier": "1", "balance_precision": ".01",
               "current": current, "target": "100"}
     result.update(changes)
@@ -172,7 +172,7 @@ def test_exact_entry_window(fx, remaining, allowed):
 
 
 @pytest.mark.parametrize("changes", [
-    {"budget": "5.00"}, {"debit": "1.01", "fees": ".12"}, {"ask": ".91"}, {"ask": ".79"},
+    {"budget": "11.00"}, {"debit": "5.01", "fees": "4.12"}, {"ask": ".91"}, {"ask": ".79"},
     {"quantity": "1.001"}, {"payout": "1.20"}, {"principal": ".88"}, {"fees": "-0.01"},
     {"observation_time": CLOSE - 100}, {"round_key": "1"}, {"balance_precision": ".001"},
     {"ask": float("nan")}, {"fee_multiplier": "-1"},
