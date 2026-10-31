@@ -1,10 +1,13 @@
 {
   "schema": "kalshi-live-config.v1",
   "enabled": false,
-  "max_total_cost_usd": "1.00",
+  "max_total_cost_usd": "10.00",
   "balance_precision": "0.01",
   "subaccount": 0,
   "duration_seconds": 600,
   "interval_seconds": 2,
-  "scheduled_cron": "*/5 * * * *"
+  "scheduled_cron": "*/5 * * * *",
+  "base_total_cost_usd": "5.00",
+  "boost_total_cost_usd": "10.00",
+  "boost_after_consecutive_base_wins": 4
 }
