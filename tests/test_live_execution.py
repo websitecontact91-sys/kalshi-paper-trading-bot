@@ -659,10 +659,10 @@ def test_fill_identity_or_strategy_discrepancies_block_new_entries(fx, change):
 def test_actual_over_budget_fill_is_preserved_for_reconciliation(fx):
     fx.broker.submit_error = AmbiguousOrderError("mock")
     fx.engine.submit(candidate(fx.clock))
-    fx.broker.executions[0]["fee_cost"] = ".20"
-    fx.broker.order["taker_fees_dollars"] = ".20"
+    fx.broker.executions[0]["fee_cost"] = "4.20"
+    fx.broker.order["taker_fees_dollars"] = "4.20"
     assert fx.engine.reconcile() == "HALTED"
-    assert D(load(fx.path)["pending"]["execution"]["debit"]) == D("1.09")
+    assert D(load(fx.path)["pending"]["execution"]["debit"]) == D("5.09")
 
 
 def test_api_failure_preserves_pending_journal_without_a_resubmission(fx):
