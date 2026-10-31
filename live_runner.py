@@ -23,7 +23,7 @@ from live_persistence import LiveStore
 from live_state import new_state, apply_balance
 from live_stakes import (BASE_LIVE_BUDGET, BOOST_AFTER_BASE_WINS, BOOST_LIVE_BUDGET,
                          MAX_LIVE_BUDGET, NEW_LIVE_BUDGETS, next_live_budget)
-from payout_quote import PayoutQuote, as_decimal
+from payout_quote import PayoutQuote, as_decimal, ask_in_band, payout_eligible
 from quote_adapter import documented_taker_cost
 from selection import Candidate, distance_pct, rank, rejection_reason
 from timing import entry_time_eligible, in_entry_window, observation_fresh, round_key, seconds_to_close
@@ -104,7 +104,8 @@ class LiveCandidateProvider:
                 quote = PayoutQuote(budget, debit, quantity)
                 candidate = Candidate(market['ticker'], side, ask, snapshot['current'],
                                       market['floor_strike'], quote, True)
-                if rejection_reason(candidate) is not None or distance_pct(candidate) <= 0:
+                if (not candidate.fresh or not ask_in_band(candidate.ask)
+                        or not payout_eligible(candidate.quote) or distance_pct(candidate) <= 0):
                     continue
                 values = {'ticker': candidate.ticker, 'side': side,
                     'series_ticker': series_of(market), 'round_key': round_key(market['close_time']),
