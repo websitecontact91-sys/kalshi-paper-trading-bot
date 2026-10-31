@@ -339,10 +339,11 @@ def test_idle_funds_gate_checks_exact_one_dollar_without_any_candidate(fx, cash,
         assert fx.engine.state["stop_reason"] is None
 
 
-def test_one_dollar_cash_allows_entry_even_when_trade_costs_less(fx):
+def test_one_dollar_cash_cannot_fund_a_five_dollar_live_stake(fx):
     fx.broker.cash = "1.00"
-    assert fx.engine.submit(candidate(fx.clock)) == "WAITING_FOR_SETTLEMENT"
-    assert len(fx.broker.posts) == 1
+    assert fx.engine.submit(candidate(fx.clock)) == "BLOCKED_INSUFFICIENT_STAKE_FUNDS"
+    assert fx.engine.state["mode"] == "SCANNING"
+    assert len(fx.broker.posts) == 0
     assert D(fx.engine.state["pending"]["execution"]["debit"]) == D(".90")
 
 
