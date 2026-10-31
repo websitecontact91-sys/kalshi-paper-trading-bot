@@ -274,6 +274,8 @@ def validate(state):
             if not isinstance(pending.get(field), str):
                 raise LiveStateError("Intent amounts must be decimal strings")
         budget, debit = money(pending["budget"]), money(pending["quoted_debit"])
+        if budget not in {TRADE_BUDGET, Decimal("5.00"), Decimal("10.00")}:
+            raise LiveStateError("Intent uses an unsupported live stake budget")
         if not 0 < debit <= budget <= MAX_LIVE_BUDGET:
             raise LiveStateError("Intent exceeds the configured live total budget")
         if pending.get("execution") is not None:
