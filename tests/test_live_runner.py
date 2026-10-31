@@ -603,3 +603,18 @@ def test_reconcile_only_remains_available_when_new_entry_quote_policy_is_unready
     args = ['--reconcile-only', *args[2:]]
     assert live_runner.main(args) == 0
     assert calls == ['locked', 'reconcile', 'unlocked', 'market_closed', 'account_closed']
+
+
+def test_live_provider_sizes_ten_dollar_boost_without_changing_eligibility_rules():
+    row = snapshot(budget='10.00')
+    provider, client = candidates([row])
+    selected = list(provider.candidates(budget=D('10.00')))
+    assert len(selected) == 1
+    trade = selected[0]
+    assert D(trade['budget']) == D('10.00')
+    assert D(trade['debit']) <= D('10.00')
+    assert D(trade['worst_case_debit']) <= D('10.00')
+    assert D(trade['ask']) >= D('.80') and D(trade['ask']) <= D('.90')
+    assert D(trade['displayed_multiplier']) >= D('1.10')
+    assert D(trade['displayed_multiplier']) <= D('1.20')
+    assert client.batch_arguments['quote_budget'] == D('10.00')
