@@ -1,6 +1,6 @@
 # Kalshi 15-minute paper trading
 
-The scheduled paper simulator uses live Kalshi market data and simulated cash. Its HTTP client allows market, series, event, order-book and Kalshi-hosted reference-feed reads only. A separate live-account implementation is included with real-order submission disabled by default. Both use a $1 total budget including fees for new entries.
+The scheduled paper simulator uses live Kalshi market data and simulated cash. Its HTTP client allows market, series, event, order-book and Kalshi-hosted reference-feed reads only. A separate live-account implementation is included with real-order submission disabled by default. Paper keeps its existing $1 fee-inclusive budget. Live uses a $5 fee-inclusive base stake, with one $10 live stake after four consecutive settled $5 wins; the $10 trade resets the streak regardless of result.
 
 ## Current deployment status
 
@@ -73,9 +73,9 @@ python live_runner.py --preflight
 
 The preflight verifies available account cash, exchange status, resting-order reads and position reads. Its report explicitly says that real-order execution has not been tested. Successfully reading a balance does not prove permission to submit an order, an actual fill, or a completed real-money settlement.
 
-### Actual fills, fees and the $1 limit
+### Actual fills, fees and the live $5/$10 stake limits
 
-The V2 order schema does not document a server-enforced total-cost field that includes fees. The live implementation therefore sizes with a conservative bound under the currently observed quadratic fee terms: every minimum 0.01-contract increment is treated as a separately rounded fill, possible rebates are ignored, and cent rounding conservatively covers either documented account type. The bound must be at most $1 before submission. The expected fee-inclusive payout must still display within 1.10–1.20, and the selected ask must still be 80–90 cents.
+The V2 order schema does not document a server-enforced total-cost field that includes fees. The live implementation therefore sizes with a conservative bound under the currently observed quadratic fee terms: every minimum 0.01-contract increment is treated as a separately rounded fill, possible rebates are ignored, and cent rounding conservatively covers either documented account type. The bound must be at most the selected live tier ($5 normally, $10 only after four consecutive settled $5 wins) before submission. The expected fee-inclusive payout must still display within 1.10–1.20, and the selected ask must still be 80–90 cents.
 
 This bound can produce a smaller live position than the paper model. For example, at an 87-cent ask the paper model buys 1.13 contracts for $0.9921; the conservative live model can choose 1.00 contract with an expected $0.88 debit. Both use a maximum $1 budget, and unused money remains available. A fee-policy change during matching is not covered by a nonexistent server-side cost cap. Actual fills and fees remain authoritative; an accounting discrepancy or rule breach halts further entries.
 
@@ -110,7 +110,7 @@ The owner-controlled sequence is:
 1. In repository Settings > Secrets and variables > Actions > Variables, set `KALSHI_LIVE_SCHEDULE_ENABLED` to `false`.
 2. In Actions > Live trading - disabled until owner activation, use Run workflow on `main` with mode `initialize` once. This creates the separate live journal without placing an order. Existing journals cannot be reset this way.
 3. Run the same workflow with mode `preflight` and review the account, exchange and available-funds report. This also cannot place an order.
-4. If proceeding, the owner changes `live_config.json` to `enabled: true`, retaining the $1 fee-inclusive budget and all other settings. The test suite accepts either explicit activation value while separately verifying disabled defaults and confirmation requirements.
+4. If proceeding, the owner changes `live_config.json` to `enabled: true`, retaining the configured $5 base / $10 streak stake policy and all other settings. The test suite accepts either explicit activation value while separately verifying disabled defaults and confirmation requirements.
 5. The owner starts mode `run` on `main` with confirmation `I_ACCEPT_REAL_MONEY_TRADES`. This step can submit real orders under the strategy rules. Recurring execution must remain disabled for a single manually started session.
 6. Inspect `live_state.json` on the separate `live-state` branch and the run's diagnostics for actual order IDs, attributed fills, charged fees and settlement. A green workflow alone does not prove that any order executed.
 7. After the session, the owner can restore `enabled: false` to block future order-submitting runs. Changing repository configuration does not interrupt an already-running checkout.
