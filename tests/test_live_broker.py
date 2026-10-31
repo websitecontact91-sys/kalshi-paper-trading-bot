@@ -237,7 +237,9 @@ def test_fractional_depth_and_budget_limits_are_respected():
     assert max_affordable_quantity(".89", ".129", "1") == D(".12")
     assert max_affordable_quantity(".89", ".001", "1") == D(0)
     assert max_affordable_quantity(".89", "10", "1", budget=".50") == D(".50")
-    for amount in ("1.01", "0", "-1"):
+    assert max_affordable_quantity(".89", "100", "1", budget="5.00") == D("5.00")
+    assert max_affordable_quantity(".89", "100", "1", budget="10.00") == D("10.00")
+    for amount in ("10.01", "0", "-1"):
         with pytest.raises(BrokerError):
             max_affordable_quantity(".89", "10", "1", budget=amount)
 
@@ -360,3 +362,18 @@ def test_read_allowlist_has_no_general_write_or_account_configuration_path():
                  "/portfolio/transfers", "/portfolio/orders/id?secret=true"):
         with pytest.raises(BrokerError):
             client._read(path)
+
+
+@pytest.mark.parametrize("budget", ["5.00", "10.00"])
+def test_broker_accepts_only_configured_live_stake_tiers_when_explicit(budget):
+    session = Session(ack())
+    result = broker(session, allow_trading=True).submit_limit_buy(**request(budget=budget))
+    assert result["order_id"] == "order-1"
+
+
+@pytest.mark.parametrize("budget", ["1.00", "7.50", "10.01"])
+def test_broker_rejects_non_tier_live_budget_when_explicit(budget):
+    session = Session()
+    with pytest.raises(BrokerError):
+        broker(session, allow_trading=True).submit_limit_buy(**request(budget=budget))
+    assert not session.calls
