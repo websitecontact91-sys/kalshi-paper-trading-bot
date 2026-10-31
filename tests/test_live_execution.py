@@ -344,7 +344,7 @@ def test_one_dollar_cash_cannot_fund_a_five_dollar_live_stake(fx):
     assert fx.engine.submit(candidate(fx.clock)) == "BLOCKED_INSUFFICIENT_STAKE_FUNDS"
     assert fx.engine.state["mode"] == "SCANNING"
     assert len(fx.broker.posts) == 0
-    assert D(fx.engine.state["pending"]["execution"]["debit"]) == D(".90")
+    assert fx.engine.state["pending"] is None
 
 
 def test_less_than_one_dollar_stops_even_if_the_expected_purchase_fits(fx):
