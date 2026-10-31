@@ -935,3 +935,18 @@ def test_five_year_style_wrong_side_candidate_never_submits(fx):
     with pytest.raises(CandidateInvalid):
         fx.engine.submit(trade)
     assert not fx.broker.posts
+
+
+def test_ten_dollar_candidate_reaches_broker_with_ten_dollar_budget(fx):
+    trade = candidate(fx.clock, budget="10.00")
+    assert fx.engine.submit(trade) == "WAITING_FOR_SETTLEMENT"
+    assert fx.broker.posts[-1]["budget"] == "10.00"
+
+
+def test_cash_below_selected_tier_blocks_entry_without_changing_one_dollar_stop_policy(fx):
+    fx.broker.cash = "7.00"
+    result = fx.engine.submit(candidate(fx.clock, budget="10.00"))
+    assert result == "BLOCKED_INSUFFICIENT_STAKE_FUNDS"
+    assert fx.engine.state["mode"] == "SCANNING"
+    assert fx.engine.state["stop_reason"] is None
+    assert not fx.broker.posts
