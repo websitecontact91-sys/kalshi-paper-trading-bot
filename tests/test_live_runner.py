@@ -496,7 +496,7 @@ def test_runner_checks_cash_before_market_scan_even_without_candidates(
             pass
         def refresh_candidate(self, candidate):
             return copy.deepcopy(candidate)
-        def candidates(self, attempted):
+        def candidates(self, attempted, budget=None):
             events.append('scan')
             return iter(())
     ticks = iter(range(100, 200))
@@ -568,7 +568,7 @@ def isolated_loop(tmp_path, monkeypatch, raised, *, quote_blockers=()):
             pass
         def refresh_candidate(self, candidate):
             return copy.deepcopy(candidate)
-        def candidates(self, attempted):
+        def candidates(self, attempted, budget=None):
             yield {'synthetic': True}
     ticks = iter(range(100, 200))
     monkeypatch.setattr(live_runner.time, 'monotonic', lambda: next(ticks))
