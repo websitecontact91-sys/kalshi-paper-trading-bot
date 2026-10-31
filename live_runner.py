@@ -92,7 +92,7 @@ class LiveCandidateProvider:
             try:
                 if as_decimal(budget) not in NEW_LIVE_BUDGETS:
                     continue
-                if detail.quote.budget > as_decimal(budget) or detail.quote.debit > as_decimal(budget):
+                if detail.quote.budget != as_decimal(budget) or detail.quote.debit > as_decimal(budget):
                     continue
                 multiplier = as_decimal(detail.evidence['fee_multiplier'])
                 quantity = max_affordable_quantity(ask, detail.quantity, multiplier,
@@ -206,6 +206,7 @@ def preflight(broker, config):
         'max_total_cost_usd': str(MAX_LIVE_BUDGET),
         'minimum_available_cash_usd': '1.00',
         'sufficient_funds_for_base_trade': as_decimal(account['available_balance_usd']) >= BASE_LIVE_BUDGET,
+        'sufficient_funds_for_new_trade': as_decimal(account['available_balance_usd']) >= BASE_LIVE_BUDGET,
         'balance_precision_for_cost_bound': config.balance_precision,
         'account': account, 'exchange': exchange,
         'existing_resting_order_count': len(resting), 'existing_unsettled_position_rows': len(positions),
