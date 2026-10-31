@@ -51,7 +51,10 @@ def test_live_configuration_is_explicit_and_account_verification_cannot_submit_o
     assert LiveSettings().enabled is False
     assert isinstance(config['enabled'], bool)
     assert settings(ROOT / 'live_config.json').enabled is config['enabled']
-    assert config['max_total_cost_usd'] == '1.00'
+    assert config['base_total_cost_usd'] == '5.00'
+    assert config['boost_total_cost_usd'] == '10.00'
+    assert config['max_total_cost_usd'] == '10.00'
+    assert config['boost_after_consecutive_base_wins'] == 4
     doc = workflow('live-readiness.yml')
     assert doc['permissions'] == {'contents': 'read'}
     commands = '\n'.join(step.get('run', '') for step in doc['jobs']['verify']['steps'])
@@ -61,7 +64,7 @@ def test_live_configuration_is_explicit_and_account_verification_cannot_submit_o
 
 def test_live_schedule_has_separate_serialization_and_stop_gate_before_successor():
     doc = workflow('live-trading.yml')
-    assert doc['on']['schedule'] == [{'cron': '*/5 * * * *'}]
+    assert 'schedule' not in doc['on']
     assert 'push' not in doc['on']
     assert doc['on']['workflow_dispatch']['inputs']['mode']['default'] == 'preflight'
     assert doc['concurrency'] == {'group': 'kalshi-live-state', 'cancel-in-progress': 'false'}
