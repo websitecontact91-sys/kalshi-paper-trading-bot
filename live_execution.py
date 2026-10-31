@@ -14,6 +14,7 @@ import uuid
 from live_broker import BrokerError, OrderRejected, TradingDisabled, worst_case_debit
 from live_state import (LiveStateError, execution_breaches, money, validate, apply_balance,
                         FUNDS_POLICY, NON_HALTING_EXECUTION_WARNINGS, warning_only_halt)
+from live_stakes import MAX_LIVE_BUDGET, NEW_LIVE_BUDGETS
 from payout_quote import PayoutQuote, ask_in_band, payout_eligible, as_decimal
 from quote_adapter import documented_taker_cost
 from timing import (MAX_FUTURE_S, entry_time_eligible, in_entry_window,
@@ -157,8 +158,9 @@ def normalize_execution(order, fills, pending, *, subaccount=0, now=None):
     debit = principal + fees
     if debit <= 0:
         raise ReconciliationMismatch("nonpositive_actual_debit")
-    quote = PayoutQuote(max(TRADE_BUDGET, debit), debit, quantity)
-    if debit > TRADE_BUDGET:
+    planned_budget = as_decimal(pending["budget"])
+    quote = PayoutQuote(max(planned_budget, debit), debit, quantity)
+    if debit > planned_budget:
         flags.append("actual_debit_exceeds_budget")
     if not payout_eligible(quote):
         flags.append("actual_payout_multiple_out_of_band")
@@ -355,7 +357,9 @@ class LiveExecution:
                 c[field] = str(as_decimal(c[field]))
             c["balance_precision"] = str(as_decimal(c.get("balance_precision", "0.01")))
             quote = PayoutQuote(c["budget"], c["debit"], c["payout"])
-            if quote.budget != TRADE_BUDGET or not ask_in_band(c["ask"]) or not payout_eligible(quote):
+            if quote.budget not in NEW_LIVE_BUDGETS or quote.budget > MAX_LIVE_BUDGET:
+                raise ValueError("unsupported_live_stake_budget")
+            if not ask_in_band(c["ask"]) or not payout_eligible(quote):
                 raise ValueError("strategy_budget_or_price_or_payout")
             quantity = as_decimal(c["quantity"])
             if quantity <= 0 or quantity % Decimal("0.01") or quote.payout != quantity:
@@ -369,7 +373,7 @@ class LiveExecution:
                     or debit != quote.debit):
                 raise ValueError("quoted_costs_do_not_match_fee_model")
             maximum = worst_case_debit(c["ask"], c["quantity"], c["fee_multiplier"], c["balance_precision"])
-            if maximum > TRADE_BUDGET:
+            if maximum > quote.budget:
                 raise ValueError("worst_case_total_exceeds_budget")
             c["worst_case_debit"] = str(maximum)
             return c
@@ -425,6 +429,9 @@ class LiveExecution:
         if funds != "SCANNING":
             return funds
         cash = money(self.state["account_cash"], "available account cash", nonnegative=True)
+        if cash < as_decimal(c["budget"]):
+            self._event("LIVE_STAKE_FUNDS_UNAVAILABLE", required_budget=c["budget"], account_cash=str(cash))
+            return "BLOCKED_INSUFFICIENT_STAKE_FUNDS"
         try:
             if self.broker.positions(c["ticker"]) or self.broker.orders(c["ticker"]):
                 return "BLOCKED_EXISTING_EXPOSURE"
@@ -463,7 +470,8 @@ class LiveExecution:
         try:
             ack = self.broker.submit_limit_buy(ticker=c["ticker"], side=c["side"], quantity=c["quantity"],
                 price=c["ask"], client_order_id=pending["client_order_id"], expected_debit=c["debit"],
-                fee_multiplier=c["fee_multiplier"], balance_precision=c["balance_precision"])
+                fee_multiplier=c["fee_multiplier"], balance_precision=c["balance_precision"],
+                budget=c["budget"])
         except TradingDisabled:
             return self._finish_unfilled("NOT_SENT", "broker_disabled")
         except OrderRejected:

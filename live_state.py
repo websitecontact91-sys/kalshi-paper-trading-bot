@@ -14,6 +14,7 @@ import tempfile
 import uuid
 from decimal import Decimal
 
+from live_stakes import MAX_LIVE_BUDGET
 from payout_quote import PayoutQuote, as_decimal, ask_in_band, payout_eligible
 from timing import MAX_FUTURE_S, in_entry_window, observation_fresh, round_key, timestamp
 from trade_config import TRADE_BUDGET
@@ -158,7 +159,7 @@ def execution_breaches(record):
     actual = _execution(execution)
     if actual["quantity"] != money(record.get("quantity"), "requested quantity"):
         breaches.add("partial_fill_of_fill_or_kill_order")
-    if actual["debit"] > min(TRADE_BUDGET, money(record.get("budget"), "budget")):
+    if actual["debit"] > money(record.get("budget"), "budget"):
         breaches.add("actual_debit_exceeds_budget")
     quote = PayoutQuote(max(TRADE_BUDGET, actual["debit"]), actual["debit"], actual["payout"])
     # Actual price/multiplier deviations are retained in risk_flags as warnings,
@@ -273,8 +274,10 @@ def validate(state):
             if not isinstance(pending.get(field), str):
                 raise LiveStateError("Intent amounts must be decimal strings")
         budget, debit = money(pending["budget"]), money(pending["quoted_debit"])
-        if not 0 < debit <= budget <= TRADE_BUDGET:
-            raise LiveStateError("Intent exceeds the configured total budget")
+        if budget not in {TRADE_BUDGET, Decimal("5.00"), Decimal("10.00")}:
+            raise LiveStateError("Intent uses an unsupported live stake budget")
+        if not 0 < debit <= budget <= MAX_LIVE_BUDGET:
+            raise LiveStateError("Intent exceeds the configured live total budget")
         if pending.get("execution") is not None:
             _execution(pending["execution"])
         if mode == "WAITING_FOR_SETTLEMENT" and pending.get("execution") is None:

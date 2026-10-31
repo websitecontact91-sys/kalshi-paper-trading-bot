@@ -40,14 +40,14 @@ class Clock:
 
 
 def snapshot(ticker='KXBTC15M-TEST', *, now=NOW, remaining=30, price='.89',
-             current='101', side='YES'):
+             current='101', side='YES', budget='5.00'):
     series = ticker.split('-')[0]
     market = {'ticker': ticker, 'series_ticker': series, 'status': 'active',
               'close_time': now + remaining, 'floor_strike': '100',
               'market_type': 'binary', 'notional_value_dollars': '1.0000'}
     detail = build_modeled_quote(price, '100', {'fee_type': 'quadratic', 'fee_multiplier': '1'},
         {'fee_type_override': None, 'fee_multiplier_override': None}, market,
-        balance_precision='0.0001', now=now)
+        budget=budget, balance_precision='0.0001', now=now)
     return {'market': market, 'compatible': True, 'quote_ready': True,
             'observation_time': now, 'current': current, 'asks': {side: D(price)},
             'quotes': {side: detail}, 'ask_sources': {side: 'observed_orderbook'}}
@@ -80,23 +80,23 @@ def candidates(rows, clock=None):
     return LiveCandidateProvider(client, clock=clock), client
 
 
-def test_live_sizing_uses_one_dollar_including_conservative_fragmented_fees():
+def test_live_sizing_uses_five_dollar_fee_inclusive_cap():
     row = snapshot()
     assert row['quotes']['YES'].quantity > D('1')
     provider, client = candidates([row])
     selected = list(provider.candidates())
     assert len(selected) == 1
     trade = selected[0]
-    assert D(trade['budget']) == D('1.00')
-    assert D(trade['quantity']) == D('1.00')
-    assert D(trade['debit']) == D('.90')
-    assert D(trade['payout']) == D('1.00')
+    assert D(trade['budget']) == D('5.00')
+    assert D(trade['quantity']) > D('1.00')
+    assert D(trade['debit']) <= D('5.00')
+    assert D(trade['payout']) == D(trade['quantity'])
     assert D(trade['principal']) + D(trade['fees']) == D(trade['debit'])
-    assert D(trade['worst_case_debit']) == D('1.00')
+    assert D(trade['worst_case_debit']) <= D('5.00')
     assert trade['balance_precision'] == '.01' or trade['balance_precision'] == '0.01'
     assert trade['displayed_multiplier'] == '1.11'
     assert trade['ui_parity_verified'] is False
-    assert client.batch_arguments == {'include_quotes': True, 'final_window': True}
+    assert client.batch_arguments == {'include_quotes': True, 'final_window': True, 'quote_budget': D('5.00')}
 
 
 def test_live_quotes_rank_by_signed_distance_before_payout_multiple():
@@ -155,10 +155,10 @@ def test_unconfigured_series_and_already_attempted_round_are_excluded():
     assert client.refreshed == []
 
 
-def test_old_five_dollar_quote_cannot_be_reused_as_a_live_entry():
+def test_old_one_dollar_quote_cannot_be_reused_as_a_five_dollar_live_entry():
     row = snapshot()
-    row['quotes']['YES'] = QuoteDetails(PayoutQuote('5', '4.99', '5.6'), D('5.6'),
-        D('.006'), D('4.984'), 'documented_fee_model', evidence={'fee_multiplier': '1'})
+    row['quotes']['YES'] = QuoteDetails(PayoutQuote('1', '.89', '1.00'), D('1.00'),
+        D('.01'), D('.88'), 'documented_fee_model', evidence={'fee_multiplier': '1'})
     provider, _ = candidates([row])
     assert list(provider.candidates()) == []
 
@@ -205,7 +205,9 @@ def test_one_market_refresh_timeout_falls_back_without_mutating_an_account():
 
 
 def config_file(tmp_path, **overrides):
-    data = {'schema': 'kalshi-live-config.v1', 'enabled': False, 'max_total_cost_usd': '1.00',
+    data = {'schema': 'kalshi-live-config.v1', 'enabled': False, 'max_total_cost_usd': '10.00',
+        'base_total_cost_usd': '5.00', 'boost_total_cost_usd': '10.00',
+        'boost_after_consecutive_base_wins': 4,
         'balance_precision': '0.01', 'subaccount': 0, 'duration_seconds': 600,
         'interval_seconds': 2, 'scheduled_cron': '*/5 * * * *'}
     data.update(overrides)
@@ -215,6 +217,8 @@ def config_file(tmp_path, **overrides):
 
 
 @pytest.mark.parametrize('changes', [{'enabled': 'true'}, {'max_total_cost_usd': '5.00'},
+    {'base_total_cost_usd': '1.00'}, {'boost_total_cost_usd': '5.00'},
+    {'boost_after_consecutive_base_wins': 3},
     {'balance_precision': '0.0001'}, {'subaccount': True}, {'subaccount': -1},
     {'duration_seconds': 601}, {'interval_seconds': 5}, {'scheduled_cron': '*/10 * * * *'}])
 def test_settings_fail_closed_on_unsafe_or_inconsistent_configuration(tmp_path, changes):
@@ -492,7 +496,7 @@ def test_runner_checks_cash_before_market_scan_even_without_candidates(
             pass
         def refresh_candidate(self, candidate):
             return copy.deepcopy(candidate)
-        def candidates(self, attempted):
+        def candidates(self, attempted, budget=None):
             events.append('scan')
             return iter(())
     ticks = iter(range(100, 200))
@@ -564,7 +568,7 @@ def isolated_loop(tmp_path, monkeypatch, raised, *, quote_blockers=()):
             pass
         def refresh_candidate(self, candidate):
             return copy.deepcopy(candidate)
-        def candidates(self, attempted):
+        def candidates(self, attempted, budget=None):
             yield {'synthetic': True}
     ticks = iter(range(100, 200))
     monkeypatch.setattr(live_runner.time, 'monotonic', lambda: next(ticks))
@@ -599,3 +603,18 @@ def test_reconcile_only_remains_available_when_new_entry_quote_policy_is_unready
     args = ['--reconcile-only', *args[2:]]
     assert live_runner.main(args) == 0
     assert calls == ['locked', 'reconcile', 'unlocked', 'market_closed', 'account_closed']
+
+
+def test_live_provider_sizes_ten_dollar_boost_without_changing_eligibility_rules():
+    row = snapshot(budget='10.00')
+    provider, client = candidates([row])
+    selected = list(provider.candidates(budget=D('10.00')))
+    assert len(selected) == 1
+    trade = selected[0]
+    assert D(trade['budget']) == D('10.00')
+    assert D(trade['debit']) <= D('10.00')
+    assert D(trade['worst_case_debit']) <= D('10.00')
+    assert D(trade['ask']) >= D('.80') and D(trade['ask']) <= D('.90')
+    assert D(trade['displayed_multiplier']) >= D('1.10')
+    assert D(trade['displayed_multiplier']) <= D('1.20')
+    assert client.batch_arguments['quote_budget'] == D('10.00')

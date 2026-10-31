@@ -25,7 +25,7 @@ def candidate(clock, side="YES", **changes):
     current = "101" if side == "YES" else "99"
     result = {"ticker": TICKER, "side": side, "round_key": round_key(CLOSE),
               "close_time": iso(CLOSE), "observation_time": clock(), "ask": ".89",
-              "quantity": "1.00", "budget": "1.00", "debit": ".90", "payout": "1.00",
+              "quantity": "1.00", "budget": "5.00", "debit": ".90", "payout": "1.00",
               "principal": ".89", "fees": ".01", "fee_multiplier": "1", "balance_precision": ".01",
               "current": current, "target": "100"}
     result.update(changes)
@@ -172,7 +172,7 @@ def test_exact_entry_window(fx, remaining, allowed):
 
 
 @pytest.mark.parametrize("changes", [
-    {"budget": "5.00"}, {"debit": "1.01", "fees": ".12"}, {"ask": ".91"}, {"ask": ".79"},
+    {"budget": "11.00"}, {"debit": "5.01", "fees": "4.12"}, {"ask": ".91"}, {"ask": ".79"},
     {"quantity": "1.001"}, {"payout": "1.20"}, {"principal": ".88"}, {"fees": "-0.01"},
     {"observation_time": CLOSE - 100}, {"round_key": "1"}, {"balance_precision": ".001"},
     {"ask": float("nan")}, {"fee_multiplier": "-1"},
@@ -184,7 +184,7 @@ def test_invalid_or_over_budget_quotes_never_submit(fx, changes):
 
 def test_worst_case_multifill_budget_blocks_nominally_affordable_quantity(fx):
     with pytest.raises(CandidateInvalid, match="worst_case"):
-        fx.engine.submit(candidate(fx.clock, quantity="1.10", principal=".979", fees=".011", debit=".99", payout="1.10"))
+        fx.engine.submit(candidate(fx.clock, quantity="5.57", principal="4.9573", fees=".0427", debit="5.00", payout="5.57"))
     assert not fx.broker.posts
 
 
@@ -339,11 +339,12 @@ def test_idle_funds_gate_checks_exact_one_dollar_without_any_candidate(fx, cash,
         assert fx.engine.state["stop_reason"] is None
 
 
-def test_one_dollar_cash_allows_entry_even_when_trade_costs_less(fx):
+def test_one_dollar_cash_cannot_fund_a_five_dollar_live_stake(fx):
     fx.broker.cash = "1.00"
-    assert fx.engine.submit(candidate(fx.clock)) == "WAITING_FOR_SETTLEMENT"
-    assert len(fx.broker.posts) == 1
-    assert D(fx.engine.state["pending"]["execution"]["debit"]) == D(".90")
+    assert fx.engine.submit(candidate(fx.clock)) == "BLOCKED_INSUFFICIENT_STAKE_FUNDS"
+    assert fx.engine.state["mode"] == "SCANNING"
+    assert len(fx.broker.posts) == 0
+    assert fx.engine.state["pending"] is None
 
 
 def test_less_than_one_dollar_stops_even_if_the_expected_purchase_fits(fx):
@@ -659,10 +660,10 @@ def test_fill_identity_or_strategy_discrepancies_block_new_entries(fx, change):
 def test_actual_over_budget_fill_is_preserved_for_reconciliation(fx):
     fx.broker.submit_error = AmbiguousOrderError("mock")
     fx.engine.submit(candidate(fx.clock))
-    fx.broker.executions[0]["fee_cost"] = ".20"
-    fx.broker.order["taker_fees_dollars"] = ".20"
+    fx.broker.executions[0]["fee_cost"] = "4.20"
+    fx.broker.order["taker_fees_dollars"] = "4.20"
     assert fx.engine.reconcile() == "HALTED"
-    assert D(load(fx.path)["pending"]["execution"]["debit"]) == D("1.09")
+    assert D(load(fx.path)["pending"]["execution"]["debit"]) == D("5.09")
 
 
 def test_api_failure_preserves_pending_journal_without_a_resubmission(fx):
@@ -934,4 +935,19 @@ def test_five_year_style_wrong_side_candidate_never_submits(fx):
     trade.update(current="4.70205221", target="4.70117", side="NO")
     with pytest.raises(CandidateInvalid):
         fx.engine.submit(trade)
+    assert not fx.broker.posts
+
+
+def test_ten_dollar_candidate_reaches_broker_with_ten_dollar_budget(fx):
+    trade = candidate(fx.clock, budget="10.00")
+    assert fx.engine.submit(trade) == "WAITING_FOR_SETTLEMENT"
+    assert fx.broker.posts[-1]["budget"] == "10.00"
+
+
+def test_cash_below_selected_tier_blocks_entry_without_changing_one_dollar_stop_policy(fx):
+    fx.broker.cash = "7.00"
+    result = fx.engine.submit(candidate(fx.clock, budget="10.00"))
+    assert result == "BLOCKED_INSUFFICIENT_STAKE_FUNDS"
+    assert fx.engine.state["mode"] == "SCANNING"
+    assert fx.engine.state["stop_reason"] is None
     assert not fx.broker.posts

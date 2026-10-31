@@ -21,11 +21,12 @@ from live_broker import LiveBroker, BrokerError, max_affordable_quantity, worst_
 from live_execution import LiveExecution, CandidateInvalid
 from live_persistence import LiveStore
 from live_state import new_state, apply_balance
-from payout_quote import PayoutQuote, as_decimal
+from live_stakes import (BASE_LIVE_BUDGET, BOOST_AFTER_BASE_WINS, BOOST_LIVE_BUDGET,
+                         MAX_LIVE_BUDGET, NEW_LIVE_BUDGETS, next_live_budget)
+from payout_quote import PayoutQuote, as_decimal, ask_in_band, payout_eligible
 from quote_adapter import documented_taker_cost
-from selection import Candidate, distance_pct, rank, rejection_reason
+from selection import Candidate, distance_pct
 from timing import entry_time_eligible, in_entry_window, observation_fresh, round_key, seconds_to_close
-from trade_config import TRADE_BUDGET
 from universe import UNIVERSE, series_of
 
 
@@ -47,8 +48,14 @@ def settings(path='live_config.json'):
         raise ValueError('Unsupported live configuration')
     if not isinstance(raw.get('enabled'), bool):
         raise ValueError('Live activation must be an explicit boolean')
-    if as_decimal(raw.get('max_total_cost_usd')) != TRADE_BUDGET:
-        raise ValueError('Live configuration must match the shared $1 fee-inclusive budget')
+    if as_decimal(raw.get('base_total_cost_usd')) != BASE_LIVE_BUDGET:
+        raise ValueError('Live base stake must be the configured $5 fee-inclusive budget')
+    if as_decimal(raw.get('boost_total_cost_usd')) != BOOST_LIVE_BUDGET:
+        raise ValueError('Live boost stake must be the configured $10 fee-inclusive budget')
+    if raw.get('boost_after_consecutive_base_wins') != BOOST_AFTER_BASE_WINS:
+        raise ValueError('Live boost must require exactly four consecutive settled $5 wins')
+    if as_decimal(raw.get('max_total_cost_usd')) != MAX_LIVE_BUDGET:
+        raise ValueError('Live maximum total cost must match the $10 boost cap')
     # Cent rounding safely bounds either documented account type. A tighter
     # real-account policy needs separately verified account-specific evidence.
     if raw.get('balance_precision') != '0.01':
@@ -68,7 +75,7 @@ class LiveCandidateProvider:
     def __init__(self, client, *, balance_precision='0.01', clock=time.time):
         self.client, self.balance_precision, self.clock = client, balance_precision, clock
 
-    def _choices(self, snapshot, now):
+    def _choices(self, snapshot, now, budget):
         market = snapshot.get('market', {})
         if (not snapshot.get('compatible') or not snapshot.get('quote_ready')
                 or market.get('status') not in ('open', 'active')
@@ -83,24 +90,27 @@ class LiveCandidateProvider:
             if detail is None or ask is None or detail.source != 'documented_fee_model':
                 continue
             try:
-                if detail.quote.budget > TRADE_BUDGET or detail.quote.debit > TRADE_BUDGET:
+                if as_decimal(budget) not in NEW_LIVE_BUDGETS:
+                    continue
+                if detail.quote.budget != as_decimal(budget) or detail.quote.debit > as_decimal(budget):
                     continue
                 multiplier = as_decimal(detail.evidence['fee_multiplier'])
                 quantity = max_affordable_quantity(ask, detail.quantity, multiplier,
-                    self.balance_precision, TRADE_BUDGET)
+                    self.balance_precision, budget)
                 if quantity <= 0:
                     continue
                 principal, fees, debit = documented_taker_cost(ask, quantity, multiplier,
                                                                self.balance_precision)
-                quote = PayoutQuote(TRADE_BUDGET, debit, quantity)
+                quote = PayoutQuote(budget, debit, quantity)
                 candidate = Candidate(market['ticker'], side, ask, snapshot['current'],
                                       market['floor_strike'], quote, True)
-                if rejection_reason(candidate) is not None or distance_pct(candidate) <= 0:
+                if (not candidate.fresh or not ask_in_band(candidate.ask)
+                        or not payout_eligible(candidate.quote) or distance_pct(candidate) <= 0):
                     continue
                 values = {'ticker': candidate.ticker, 'side': side,
                     'series_ticker': series_of(market), 'round_key': round_key(market['close_time']),
                     'close_time': market['close_time'], 'observation_time': snapshot['observation_time'],
-                    'ask': str(candidate.ask), 'quantity': str(quantity), 'budget': str(TRADE_BUDGET),
+                    'ask': str(candidate.ask), 'quantity': str(quantity), 'budget': str(as_decimal(budget)),
                     'debit': str(debit), 'principal': str(principal), 'fees': str(fees),
                     'payout': str(quantity), 'fee_multiplier': str(multiplier),
                     'balance_precision': self.balance_precision,
@@ -129,10 +139,11 @@ class LiveCandidateProvider:
         try:
             market = {'ticker': candidate['ticker'],
                       'series_ticker': candidate.get('series_ticker', candidate['ticker'].split('-')[0])}
-            fresh = self.client.snapshot(market, self.clock(), include_quotes=True)
+            budget = as_decimal(candidate['budget'])
+            fresh = self.client.snapshot(market, self.clock(), include_quotes=True, quote_budget=budget)
             if fresh.get('market', {}).get('ticker') != candidate['ticker']:
                 raise CandidateInvalid('price-lock market identity changed')
-            for chosen, values in self._choices(fresh, self.clock()):
+            for chosen, values in self._choices(fresh, self.clock(), budget):
                 if (chosen.side == candidate['side']
                         and values['round_key'] == candidate['round_key']):
                     return values
@@ -143,16 +154,20 @@ class LiveCandidateProvider:
                 requests.RequestException, TimeoutError) as exc:
             raise CandidateInvalid('final live quote refresh failed: ' + type(exc).__name__) from exc
 
-    def candidates(self, attempted_rounds=()):
+    def candidates(self, attempted_rounds=(), budget=BASE_LIVE_BUDGET):
         now = self.clock()
         markets = self.client.discover(now)
         in_window = any(in_entry_window(m['close_time'], now) for m in markets)
-        snapshots = self.client.batch_snapshots(markets, now, include_quotes=True, final_window=in_window)
+        budget = as_decimal(budget)
+        if budget not in NEW_LIVE_BUDGETS:
+            raise ValueError('Unsupported live stake budget')
+        snapshots = self.client.batch_snapshots(markets, now, include_quotes=True, final_window=in_window,
+                                                quote_budget=budget)
         choices, lookup = [], {}
         completed = self.clock()
         for snapshot in snapshots:
             try:
-                rows = self._choices(snapshot, completed)
+                rows = self._choices(snapshot, completed, budget)
             except (ValueError, TypeError, KeyError, ArithmeticError):
                 continue
             for candidate, values in rows:
@@ -160,15 +175,17 @@ class LiveCandidateProvider:
                     continue
                 choices.append(candidate)
                 lookup[(candidate.ticker, candidate.side)] = snapshot['market']
-        for ranked in rank(choices):
+        for ranked in sorted(choices, key=lambda candidate: (
+                -distance_pct(candidate), -candidate.quote.exact_multiplier,
+                candidate.ticker, candidate.side)):
             market = lookup[(ranked.ticker, ranked.side)]
             if not entry_time_eligible(market['close_time'], self.clock()):
                 continue
             try:
-                fresh = self.client.snapshot(market, self.clock(), include_quotes=True)
+                fresh = self.client.snapshot(market, self.clock(), include_quotes=True, quote_budget=budget)
                 if fresh.get('market', {}).get('ticker') != ranked.ticker:
                     continue
-                for chosen, values in self._choices(fresh, self.clock()):
+                for chosen, values in self._choices(fresh, self.clock(), budget):
                     if chosen.side == ranked.side:
                         yield values
                         break
@@ -187,9 +204,12 @@ def preflight(broker, config):
     positions = broker.positions()
     return {'mode': 'READ_ONLY_PREFLIGHT', 'account_reads_verified': True,
         'real_order_execution_tested': False, 'live_enabled': config.enabled,
-        'writes_enabled': False, 'max_total_cost_usd': str(TRADE_BUDGET),
-        'minimum_available_cash_usd': str(TRADE_BUDGET),
-        'sufficient_funds_for_new_trade': as_decimal(account['available_balance_usd']) >= TRADE_BUDGET,
+        'writes_enabled': False, 'base_total_cost_usd': str(BASE_LIVE_BUDGET),
+        'boost_total_cost_usd': str(BOOST_LIVE_BUDGET),
+        'max_total_cost_usd': str(MAX_LIVE_BUDGET),
+        'minimum_available_cash_usd': '1.00',
+        'sufficient_funds_for_base_trade': as_decimal(account['available_balance_usd']) >= BASE_LIVE_BUDGET,
+        'sufficient_funds_for_new_trade': as_decimal(account['available_balance_usd']) >= BASE_LIVE_BUDGET,
         'balance_precision_for_cost_bound': config.balance_precision,
         'account': account, 'exchange': exchange,
         'existing_resting_order_count': len(resting), 'existing_unsettled_position_rows': len(positions),
@@ -284,7 +304,8 @@ def main(argv=None):
                         engine.tick()
                     elif engine.check_funds() == 'SCANNING' and not client.readiness_reasons:
                         try:
-                            for candidate in provider.candidates(engine.state['attempted_rounds']):
+                            stake_budget = next_live_budget(engine.state['history'])
+                            for candidate in provider.candidates(engine.state['attempted_rounds'], stake_budget):
                                 try:
                                     engine.submit(candidate)
                                 except CandidateInvalid:

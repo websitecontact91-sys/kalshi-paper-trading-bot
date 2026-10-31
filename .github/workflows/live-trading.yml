@@ -52,7 +52,11 @@ jobs:
           from decimal import Decimal
           from pathlib import Path
           config = json.loads(Path('live_config.json').read_text())
-          if config.get('schema') != 'kalshi-live-config.v1' or Decimal(config['max_total_cost_usd']) != Decimal('1.00'):
+          if (config.get('schema') != 'kalshi-live-config.v1'
+                  or Decimal(config['base_total_cost_usd']) != Decimal('5.00')
+                  or Decimal(config['boost_total_cost_usd']) != Decimal('10.00')
+                  or Decimal(config['max_total_cost_usd']) != Decimal('10.00')
+                  or config.get('boost_after_consecutive_base_wins') != 4):
               raise SystemExit('Invalid live configuration')
           scheduled = os.environ['EVENT_NAME'] == 'schedule'
           mode = 'run' if scheduled else os.environ.get('REQUESTED_MODE', 'preflight')

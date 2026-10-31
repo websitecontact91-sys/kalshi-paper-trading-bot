@@ -30,6 +30,7 @@ import requests
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, padding, rsa
 
+from live_stakes import MAX_LIVE_BUDGET, NEW_LIVE_BUDGETS
 from payout_quote import PayoutQuote, as_decimal, ask_in_band, payout_eligible
 from quote_adapter import documented_taker_cost
 from trade_config import TRADE_BUDGET
@@ -127,8 +128,8 @@ def max_affordable_quantity(price, available_quantity, fee_multiplier,
                             balance_precision="0.01", budget=TRADE_BUDGET):
     amount = _decimal(budget, "budget")
     depth = _decimal(available_quantity, "available quantity")
-    if not 0 < amount <= TRADE_BUDGET or depth < 0:
-        raise BrokerError("Live budget must be positive and at most the configured $1 cap")
+    if not 0 < amount <= MAX_LIVE_BUDGET or depth < 0:
+        raise BrokerError("Live budget must be positive and at most the configured $10 cap")
     unit_cost = worst_case_debit(price, QUANTITY_STEP, fee_multiplier, balance_precision)
     units = min((depth / QUANTITY_STEP).to_integral_value(rounding=ROUND_FLOOR),
                 (amount / unit_cost).to_integral_value(rounding=ROUND_FLOOR))
@@ -341,7 +342,8 @@ class LiveBroker:
         return rows
 
     def submit_limit_buy(self, *, ticker, side, quantity, price, client_order_id,
-                         expected_debit, fee_multiplier, balance_precision="0.01"):
+                         expected_debit, fee_multiplier, balance_precision="0.01",
+                         budget=None):
         if not self.writes_enabled:
             raise TradingDisabled("Live order submission is disabled")
         ticker = _identifier(ticker, "market ticker")
@@ -351,15 +353,20 @@ class LiveBroker:
         price, quantity, multiplier, precision = _cost_inputs(
             price, quantity, fee_multiplier, balance_precision)
         debit = _decimal(expected_debit, "expected debit")
+        amount = _decimal(TRADE_BUDGET if budget is None else budget, "budget")
+        if budget is not None and amount not in NEW_LIVE_BUDGETS:
+            raise BrokerError("Unsupported live stake budget")
+        if not 0 < amount <= MAX_LIVE_BUDGET:
+            raise BrokerError("Live stake budget exceeds the configured maximum")
         if quantity <= 0 or not ask_in_band(price):
             raise BrokerError("Order quantity or entry price is outside the strategy limits")
         modeled = documented_taker_cost(price, quantity, multiplier, precision)[2]
-        if debit != modeled or not 0 < debit <= TRADE_BUDGET:
-            raise BrokerError("Expected debit is inconsistent or above the configured $1 budget")
-        if not payout_eligible(PayoutQuote(TRADE_BUDGET, debit, quantity)):
+        if debit != modeled or not 0 < debit <= amount:
+            raise BrokerError("Expected debit is inconsistent or above the selected live budget")
+        if not payout_eligible(PayoutQuote(amount, debit, quantity)):
             raise BrokerError("Fee-inclusive payout is outside the strategy limits")
-        if worst_case_debit(price, quantity, multiplier, precision) > TRADE_BUDGET:
-            raise BrokerError("Worst-case fill and fee rounding exceeds the configured $1 budget")
+        if worst_case_debit(price, quantity, multiplier, precision) > amount:
+            raise BrokerError("Worst-case fill and fee rounding exceeds the selected live budget")
         # V2 has a single YES-price book. A NO purchase is an ask at 1-NO-price.
         yes_price = price if side == "YES" else 1 - price
         body = {"ticker": ticker, "client_order_id": client_order_id,

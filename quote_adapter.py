@@ -25,6 +25,7 @@ FEE_STEP = Decimal("0.000001")
 FEE_SCHEDULE_URL = "https://kalshi.com/docs/kalshi-fee-schedule.pdf"
 FEE_ROUNDING_URL = "https://docs.kalshi.com/getting_started/fee_rounding"
 FIXED_POINT_URL = "https://docs.kalshi.com/getting_started/fixed_point_migration"
+MAX_MODELED_BUDGET = Decimal("10.00")
 
 
 class QuoteUnavailable(ValueError):
@@ -244,8 +245,8 @@ def build_modeled_quote(ask, available_quantity, series, event, market, *,
     price = _number(ask, "ask")
     depth = _number(available_quantity, "available quantity")
     amount = _number(budget, "budget")
-    if not 0 < price < 1 or depth <= 0 or not 0 < amount <= TRADE_BUDGET:
-        raise QuoteUnavailable("invalid ask, depth, or maximum $1 fee-inclusive budget")
+    if not 0 < price < 1 or depth <= 0 or not 0 < amount <= MAX_MODELED_BUDGET:
+        raise QuoteUnavailable("invalid ask, depth, or unsupported fee-inclusive budget")
     if balance_precision is None:
         raise QuoteUnavailable("model balance precision is unknown")
     if market.get("market_type") != "binary":
