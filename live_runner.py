@@ -25,7 +25,7 @@ from live_stakes import (BASE_LIVE_BUDGET, BOOST_AFTER_BASE_WINS, BOOST_LIVE_BUD
                          MAX_LIVE_BUDGET, NEW_LIVE_BUDGETS, next_live_budget)
 from payout_quote import PayoutQuote, as_decimal, ask_in_band, payout_eligible
 from quote_adapter import documented_taker_cost
-from selection import Candidate, distance_pct, rank, rejection_reason
+from selection import Candidate, distance_pct
 from timing import entry_time_eligible, in_entry_window, observation_fresh, round_key, seconds_to_close
 from universe import UNIVERSE, series_of
 
@@ -175,7 +175,9 @@ class LiveCandidateProvider:
                     continue
                 choices.append(candidate)
                 lookup[(candidate.ticker, candidate.side)] = snapshot['market']
-        for ranked in rank(choices):
+        for ranked in sorted(choices, key=lambda candidate: (
+                -distance_pct(candidate), -candidate.quote.exact_multiplier,
+                candidate.ticker, candidate.side)):
             market = lookup[(ranked.ticker, ranked.side)]
             if not entry_time_eligible(market['close_time'], self.clock()):
                 continue
