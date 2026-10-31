@@ -259,7 +259,7 @@ def test_sizing_is_maximal_at_the_observed_price_within_budget_and_depth():
 
 
 @pytest.mark.parametrize("kwargs", [{"depth": "0.009"}, {"depth": "NaN"},
-                                    {"budget": "1.01"}, {"budget": "5.00"}, {"ask": "0"}, {"ask": "1"}])
+                                    {"budget": "10.01"}, {"ask": "0"}, {"ask": "1"}])
 def test_no_phantom_depth_or_overspend(kwargs):
     with pytest.raises(QuoteUnavailable):
         modeled(**kwargs)
@@ -282,3 +282,11 @@ def test_one_dollar_sizing_caps_total_fees_and_uses_maximum_affordable_quantity(
     assert detail.quote.payout == detail.quantity
     _, _, next_debit = documented_taker_cost(ask, detail.quantity + D("0.01"), "1", precision)
     assert next_debit > D("1.00")
+
+
+@pytest.mark.parametrize("budget", ["5.00", "10.00"])
+def test_modeled_quote_supports_live_stake_budgets_without_changing_default(budget):
+    detail = modeled(budget=budget)
+    assert detail.quote.budget == D(budget)
+    assert detail.quote.debit <= D(budget)
+    assert detail.quantity > 0
