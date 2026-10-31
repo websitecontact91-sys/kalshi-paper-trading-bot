@@ -184,7 +184,7 @@ def test_invalid_or_over_budget_quotes_never_submit(fx, changes):
 
 def test_worst_case_multifill_budget_blocks_nominally_affordable_quantity(fx):
     with pytest.raises(CandidateInvalid, match="worst_case"):
-        fx.engine.submit(candidate(fx.clock, quantity="1.10", principal=".979", fees=".011", debit=".99", payout="1.10"))
+        fx.engine.submit(candidate(fx.clock, quantity="5.57", principal="4.9573", fees=".0427", debit="5.00", payout="5.57"))
     assert not fx.broker.posts
 
 
