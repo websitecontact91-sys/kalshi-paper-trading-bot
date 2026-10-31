@@ -149,7 +149,8 @@ class LiveKalshiClient:
         self._discovered, self.discovery_errors = self.clock(), errors
         return list(self._markets)
 
-    def _snapshot(self, market, *, book=None, include_quotes=True, force_metadata=False):
+    def _snapshot(self, market, *, book=None, include_quotes=True, force_metadata=False,
+                  quote_budget=TRADE_BUDGET):
         result = {'market': market, 'current': None, 'observation_time': None,
                   'compatible': False, 'compatibility_reason': 'not_evaluated',
                   'quotes': {}, 'asks': {}, 'summary_asks': {}, 'ask_sources': {},
@@ -198,12 +199,13 @@ class LiveKalshiClient:
                 opposite = 'NO' if side == 'YES' else 'YES'
                 result['ask_sources'][side] = 'kalshi_orderbook:1-best_' + opposite + '_bid'
                 result['quotes'][side] = build_modeled_quote(price, quantity, metadata, event, market,
-                    budget=TRADE_BUDGET, balance_precision=self.policy['balance_precision'], now=self.clock())
+                    budget=quote_budget, balance_precision=self.policy['balance_precision'], now=self.clock())
             except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
                 result['rejections'][side] = ('quote_unavailable:' + str(exc))
         return result
 
-    def batch_snapshots(self, markets, now=None, include_quotes=True, final_window=False):
+    def batch_snapshots(self, markets, now=None, include_quotes=True, final_window=False,
+                        quote_budget=TRADE_BUDGET):
         """Batch status/asks; refresh precomputed shortlist and changed-status markets."""
         tickers = [m['ticker'] for m in markets]
         updated = self.api.refresh_markets(tickers)
@@ -235,7 +237,7 @@ class LiveKalshiClient:
                 should_quote = include_quotes and m['ticker'] in targets
                 # Empty books intentionally prevent fallback to 30 sequential network reads.
                 task = pool.submit(self._snapshot, m, book=books.get(m['ticker'], {'orderbook_fp': {}}),
-                                   include_quotes=should_quote)
+                                   include_quotes=should_quote, quote_budget=quote_budget)
                 tasks[task] = m
             for task in as_completed(tasks):
                 result = task.result()
@@ -258,10 +260,11 @@ class LiveKalshiClient:
         self._statuses = {m['ticker']: m.get('status') for m in refreshed}
         return sorted(results, key=lambda s: s['market']['ticker'])
 
-    def snapshot(self, market, now=None, include_quotes=True):
+    def snapshot(self, market, now=None, include_quotes=True, quote_budget=TRADE_BUDGET):
         current = self.api.market(market['ticker'])
         current['series_ticker'] = market.get('series_ticker', market['ticker'].split('-')[0])
-        return self._snapshot(current, include_quotes=include_quotes, force_metadata=True)
+        return self._snapshot(current, include_quotes=include_quotes, force_metadata=True,
+                              quote_budget=quote_budget)
 
     def official_market(self, ticker):
         return self.api.market(ticker)
