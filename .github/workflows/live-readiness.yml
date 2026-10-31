@@ -10,6 +10,7 @@ on:
       - 'live_state.py'
       - 'live_persistence.py'
       - 'live_runner.py'
+      - 'live_stakes.py'
       - 'live_config.json'
       - 'trade_config.py'
       - 'tests/test_live_*.py'
