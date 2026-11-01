@@ -165,7 +165,8 @@ def normalize_execution(order, fills, pending, *, subaccount=0, now=None):
     if not payout_eligible(quote):
         flags.append("actual_payout_multiple_out_of_band")
     if quantity != requested:
-        flags.append("partial_fill_of_fill_or_kill_order")
+        if pending.get("time_in_force") != "immediate_or_cancel":
+            flags.append("partial_fill_of_fill_or_kill_order")
     if remaining > 0 or order.get("status") == "resting":
         flags.append("unexpected_remaining_order")
     if order.get("status") not in {"executed", "canceled", "cancelled"}:
@@ -470,6 +471,7 @@ class LiveExecution:
         c = self._locked_candidate(c)
         pending = {key: c[key] for key in ("ticker", "side", "round_key", "close_time", "observation_time",
                     "ask", "quantity", "budget", "fee_multiplier", "balance_precision", "worst_case_debit")}
+        pending["time_in_force"] = "immediate_or_cancel"
         pending.update(quoted_debit=c["debit"], quoted_payout=c["payout"], quoted_fees=c["fees"],
                        quoted_principal=c["principal"], stage="INTENT", execution=None, order_id=None,
                        prepared_at=iso(self.clock()), source_sha=self.source, risk_flags=[])
@@ -573,7 +575,7 @@ class LiveExecution:
                         raise ReconciliationMismatch("previously_recorded_fill_changed")
             if execution is None:
                 if order.get("status") in {"canceled", "cancelled"} and _decimal(order, "remaining_count_fp") == 0:
-                    return self._finish_unfilled("UNFILLED", "fill_or_kill_unfilled")
+                    return self._finish_unfilled("UNFILLED", "immediate_or_cancel_unfilled")
                 if order.get("status") == "resting" or _decimal(order, "remaining_count_fp") > 0:
                     return self._halt("unexpected_remaining_order")
                 self._event("LIVE_ORDER_TERMINAL_STATE_PENDING")
