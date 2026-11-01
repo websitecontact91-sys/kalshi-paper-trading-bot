@@ -49,6 +49,34 @@ jobs:
           python -m compileall -q .
           python -m pytest -q | tee runtime_reports/pytest.txt
 
+      - name: Diagnose missed market settlements (read-only temporary)
+        run: |
+          python - <<'PY'
+          import requests
+          tickers = [
+              "KXZEC15M-26OCT312015-15",
+              "KXETH15M-26OCT312130-30",
+              "KXHYPE15M-26OCT312215-15",
+              "KXDOGE15M-26OCT312230-30",
+              "KXBNB15M-26OCT312245-45",
+              "KXXRP15M-26OCT312300-00",
+              "KXSOL15M-26NOV010130-30",
+              "KXXRP15M-26NOV010145-45",
+              "KXETH15M-26NOV010245-45",
+              "KXZEC15M-26NOV010400-00",
+              "KXSOL15M-26NOV010500-00",
+              "KXDOGE15M-26NOV010530-30",
+              "KXBTC15M-26NOV010600-00",
+          ]
+          base = "https://external-api.kalshi.com/trade-api/v2/markets/"
+          for ticker in tickers:
+              r = requests.get(base + ticker, timeout=10)
+              print("DIAG", ticker, r.status_code)
+              data = r.json().get("market", r.json()) if r.ok else {}
+              print("RESULT", ticker, data.get("status"), data.get("result"),
+                    data.get("yes_bid_dollars"), data.get("yes_ask_dollars"))
+          PY
+
       - name: Exercise all six production-runner simulations
         run: |
           set -euo pipefail
