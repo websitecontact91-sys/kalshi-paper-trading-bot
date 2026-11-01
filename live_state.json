@@ -3484,7 +3484,7 @@
       "worst_case_debit": "5.00"
     }
   ],
-  "mode": "RECONCILING",
+  "mode": "WAITING_FOR_SETTLEMENT",
   "pending": {
     "ask": "0.8800",
     "balance_precision": "0.01",
@@ -3493,7 +3493,31 @@
     "close_time": "2026-11-01T23:30:00Z",
     "current": "991.75400000",
     "distance_pct": "0.05387300498375738988317427009",
-    "execution": null,
+    "execution": {
+      "debit": "4.247100",
+      "displayed_multiplier": "1.18",
+      "fees": "0.047100",
+      "fill_ids": [
+        "0727fcb6-3a01-9eeb-f03c-0ecf9c6fa5b5"
+      ],
+      "fills": [
+        {
+          "fees": "0.047100",
+          "fill_id": "0727fcb6-3a01-9eeb-f03c-0ecf9c6fa5b5",
+          "filled_at": "2026-11-01T23:29:04.841194+00:00",
+          "is_taker": true,
+          "observed_at": "2026-11-01T23:29:06.573331+00:00",
+          "price": "0.8400",
+          "quantity": "5.00"
+        }
+      ],
+      "first_filled_at": "2026-11-01T23:29:04.841194+00:00",
+      "last_filled_at": "2026-11-01T23:29:04.841194+00:00",
+      "payout": "5.00",
+      "principal": "4.200000",
+      "quantity": "5.00",
+      "weighted_price": "0.8400"
+    },
     "fee_multiplier": "1",
     "observation_time": 1793575742.0,
     "order_id": "01a19971-f200-7990-93f7-480dc454e8a9",
@@ -3509,7 +3533,7 @@
     "series_ticker": "KXPALLADIUM15M",
     "side": "YES",
     "source_sha": "201d4850d3269e22d2e5630d6e845fc835e857ba",
-    "stage": "ACKNOWLEDGED",
+    "stage": "FILLED",
     "submitted_at": "2026-11-01T23:29:04.802039+00:00",
     "target": "991.22",
     "ticker": "KXPALLADIUM15M-26NOV011830-30",
