@@ -1,6 +1,6 @@
 {
   "schema": "kalshi-live-config.v1",
-  "enabled": true,
+  "enabled": false,
   "max_total_cost_usd": "10.00",
   "balance_precision": "0.01",
   "subaccount": 0,
