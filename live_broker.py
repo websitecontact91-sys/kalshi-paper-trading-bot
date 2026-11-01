@@ -1,7 +1,7 @@
 """Separate account transport; production writes are disabled by default.
 
 The paper runner must never import this module.  The only implemented write is
-one V2 fill-or-kill order, and it is never retried.  A timeout, duplicate-ID
+one V2 immediate-or-cancel order, and it is never retried.  A timeout, duplicate-ID
 response, unreadable acknowledgement or server failure is an UNKNOWN outcome:
 the caller must reconcile the durable client ID before doing anything else.
 
@@ -372,7 +372,7 @@ class LiveBroker:
         body = {"ticker": ticker, "client_order_id": client_order_id,
                 "side": "bid" if side == "YES" else "ask",
                 "count": format(quantity, ".2f"), "price": format(yes_price, ".4f"),
-                "time_in_force": "fill_or_kill", "self_trade_prevention_type": "taker_at_cross",
+                "time_in_force": "immediate_or_cancel", "self_trade_prevention_type": "taker_at_cross",
                 "post_only": False, "reduce_only": False, "cancel_order_on_pause": True,
                 "subaccount": self.subaccount}
         headers = self._headers("POST", CREATE_PATH)
