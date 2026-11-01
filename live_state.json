@@ -2459,7 +2459,7 @@
     "execution": null,
     "fee_multiplier": "1",
     "observation_time": 1793518143.0,
-    "order_id": null,
+    "order_id": "01a19603-2170-7945-908f-164f1bb39c04",
     "prepared_at": "2026-11-01T07:29:08.610514+00:00",
     "probability_field": "kalshi_orderbook:1-best_NO_bid",
     "quantity": "5.00",
@@ -2472,7 +2472,8 @@
     "series_ticker": "KXETH15M",
     "side": "YES",
     "source_sha": "57b62e4c00282a0ab11c8138782810f3407ff4ad",
-    "stage": "INTENT",
+    "stage": "ACKNOWLEDGED",
+    "submitted_at": "2026-11-01T07:29:10.620880+00:00",
     "target": "2264.8",
     "ticker": "KXETH15M-26NOV010230-30",
     "worst_case_debit": "5.00"
