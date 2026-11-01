@@ -101,7 +101,7 @@ def test_signature_covers_method_and_path_without_query(key):
 
 
 @pytest.mark.parametrize("side,book_side,yes_price", [("YES", "bid", "0.8900"), ("NO", "ask", "0.1100")])
-def test_v2_maps_selected_leg_to_yes_scale_and_fok(side, book_side, yes_price):
+def test_v2_maps_selected_leg_to_yes_scale_and_ioc(side, book_side, yes_price):
     session = Session(ack())
     key = ed25519.Ed25519PrivateKey.generate()
     result = broker(session, allow_trading=True, private_key=key).submit_limit_buy(**request(side=side))
@@ -110,7 +110,7 @@ def test_v2_maps_selected_leg_to_yes_scale_and_fok(side, book_side, yes_price):
     assert method == "POST" and url.endswith("/portfolio/events/orders")
     assert options["json"] == {"ticker": "KXBTC15M-26OCT291700-00", "side": book_side,
         "count": "1.00", "price": yes_price, "client_order_id": "stable-client-id",
-        "time_in_force": "fill_or_kill", "self_trade_prevention_type": "taker_at_cross",
+        "time_in_force": "immediate_or_cancel", "self_trade_prevention_type": "taker_at_cross",
         "post_only": False, "reduce_only": False, "cancel_order_on_pause": True, "subaccount": 0}
     assert "buy_max_cost" not in options["json"]
     assert options["allow_redirects"] is False
