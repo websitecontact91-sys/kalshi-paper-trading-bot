@@ -1,6 +1,6 @@
 {
-  "account_cash": "15.6590",
-  "account_cash_checked_at": "2026-11-01T18:44:03.777353+00:00",
+  "account_cash": "16.4596",
+  "account_cash_checked_at": "2026-11-01T18:45:06.391752+00:00",
   "account_scope": "production:0:31c8bad33d4eb70d",
   "attempted_rounds": [
     "1992567",
@@ -3175,84 +3175,90 @@
       "ticker": "KXETH15M-26NOV010230-30",
       "won": false,
       "worst_case_debit": "5.00"
+    },
+    {
+      "ask": "0.8300",
+      "balance_precision": "0.01",
+      "budget": "5.00",
+      "cash_payout": "5",
+      "client_order_id": "539bce57-f21e-5c3a-963a-de8e0ddc8b74",
+      "close_time": "2026-11-01T18:45:00Z",
+      "current": "77836.06",
+      "distance_pct": "0.001785836568716742808827994003",
+      "execution": {
+        "debit": "4.199400",
+        "displayed_multiplier": "1.19",
+        "fees": "0.049400",
+        "fill_ids": [
+          "0727f9d9-53b9-a208-c420-0b2163f44459",
+          "0727f9d9-53b9-a4cd-d5e2-93db1097c247",
+          "0727f9d9-53b9-af6d-d3b2-197681e81322"
+        ],
+        "fills": [
+          {
+            "fees": "0.000100",
+            "fill_id": "0727f9d9-53b9-a208-c420-0b2163f44459",
+            "filled_at": "2026-11-01T18:44:07.103625+00:00",
+            "is_taker": true,
+            "observed_at": "2026-11-01T18:44:08.721229+00:00",
+            "price": "0.8300",
+            "quantity": "0.01"
+          },
+          {
+            "fees": "0.000100",
+            "fill_id": "0727f9d9-53b9-a4cd-d5e2-93db1097c247",
+            "filled_at": "2026-11-01T18:44:07.103625+00:00",
+            "is_taker": true,
+            "observed_at": "2026-11-01T18:44:08.721229+00:00",
+            "price": "0.8300",
+            "quantity": "0.01"
+          },
+          {
+            "fees": "0.049200",
+            "fill_id": "0727f9d9-53b9-af6d-d3b2-197681e81322",
+            "filled_at": "2026-11-01T18:44:07.103625+00:00",
+            "is_taker": true,
+            "observed_at": "2026-11-01T18:44:08.721229+00:00",
+            "price": "0.8300",
+            "quantity": "4.98"
+          }
+        ],
+        "first_filled_at": "2026-11-01T18:44:07.103625+00:00",
+        "last_filled_at": "2026-11-01T18:44:07.103625+00:00",
+        "payout": "5.00",
+        "principal": "4.150000",
+        "quantity": "5.00",
+        "weighted_price": "0.8300"
+      },
+      "fee_multiplier": "1",
+      "observation_time": 1793558641.0,
+      "order_id": "01a1986d-10d8-745e-96da-430278d9f60c",
+      "pnl": "0.800600",
+      "prepared_at": "2026-11-01T18:44:03.946931+00:00",
+      "probability_field": "kalshi_orderbook:1-best_NO_bid",
+      "quantity": "5.00",
+      "quoted_debit": "4.20",
+      "quoted_fees": "0.050000",
+      "quoted_payout": "5.00",
+      "quoted_principal": "4.150000",
+      "result": "YES",
+      "risk_flags": [],
+      "round_key": "1992843",
+      "series_ticker": "KXBTC15M",
+      "settled_at": "2026-11-01T18:45:03.585967+00:00",
+      "side": "YES",
+      "source_sha": "65587af914b18bc9091054cc6c4f6db9ce10c210",
+      "stage": "SETTLED",
+      "submitted_at": "2026-11-01T18:44:07.086472+00:00",
+      "target": "77834.67",
+      "ticker": "KXBTC15M-26NOV011345-45",
+      "won": true,
+      "worst_case_debit": "5.00"
     }
   ],
-  "mode": "WAITING_FOR_SETTLEMENT",
-  "pending": {
-    "ask": "0.8300",
-    "balance_precision": "0.01",
-    "budget": "5.00",
-    "client_order_id": "539bce57-f21e-5c3a-963a-de8e0ddc8b74",
-    "close_time": "2026-11-01T18:45:00Z",
-    "current": "77836.06",
-    "distance_pct": "0.001785836568716742808827994003",
-    "execution": {
-      "debit": "4.199400",
-      "displayed_multiplier": "1.19",
-      "fees": "0.049400",
-      "fill_ids": [
-        "0727f9d9-53b9-a208-c420-0b2163f44459",
-        "0727f9d9-53b9-a4cd-d5e2-93db1097c247",
-        "0727f9d9-53b9-af6d-d3b2-197681e81322"
-      ],
-      "fills": [
-        {
-          "fees": "0.000100",
-          "fill_id": "0727f9d9-53b9-a208-c420-0b2163f44459",
-          "filled_at": "2026-11-01T18:44:07.103625+00:00",
-          "is_taker": true,
-          "observed_at": "2026-11-01T18:44:08.721229+00:00",
-          "price": "0.8300",
-          "quantity": "0.01"
-        },
-        {
-          "fees": "0.000100",
-          "fill_id": "0727f9d9-53b9-a4cd-d5e2-93db1097c247",
-          "filled_at": "2026-11-01T18:44:07.103625+00:00",
-          "is_taker": true,
-          "observed_at": "2026-11-01T18:44:08.721229+00:00",
-          "price": "0.8300",
-          "quantity": "0.01"
-        },
-        {
-          "fees": "0.049200",
-          "fill_id": "0727f9d9-53b9-af6d-d3b2-197681e81322",
-          "filled_at": "2026-11-01T18:44:07.103625+00:00",
-          "is_taker": true,
-          "observed_at": "2026-11-01T18:44:08.721229+00:00",
-          "price": "0.8300",
-          "quantity": "4.98"
-        }
-      ],
-      "first_filled_at": "2026-11-01T18:44:07.103625+00:00",
-      "last_filled_at": "2026-11-01T18:44:07.103625+00:00",
-      "payout": "5.00",
-      "principal": "4.150000",
-      "quantity": "5.00",
-      "weighted_price": "0.8300"
-    },
-    "fee_multiplier": "1",
-    "observation_time": 1793558641.0,
-    "order_id": "01a1986d-10d8-745e-96da-430278d9f60c",
-    "prepared_at": "2026-11-01T18:44:03.946931+00:00",
-    "probability_field": "kalshi_orderbook:1-best_NO_bid",
-    "quantity": "5.00",
-    "quoted_debit": "4.20",
-    "quoted_fees": "0.050000",
-    "quoted_payout": "5.00",
-    "quoted_principal": "4.150000",
-    "risk_flags": [],
-    "round_key": "1992843",
-    "series_ticker": "KXBTC15M",
-    "side": "YES",
-    "source_sha": "65587af914b18bc9091054cc6c4f6db9ce10c210",
-    "stage": "FILLED",
-    "submitted_at": "2026-11-01T18:44:07.086472+00:00",
-    "target": "77834.67",
-    "ticker": "KXBTC15M-26NOV011345-45",
-    "worst_case_debit": "5.00"
-  },
-  "realized_pnl": "-4.190900",
+  "mode": "SCANNING",
+  "pending": null,
+  "realized_pnl": "-3.390300",
   "schema": "kalshi-live.v1",
   "session_id": "2c127708-6f99-4d8c-8197-4de798ce4966",
   "stop_reason": null
