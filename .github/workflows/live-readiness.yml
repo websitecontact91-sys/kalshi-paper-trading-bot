@@ -3,7 +3,7 @@ name: Verify live account integration - no orders
 on:
   workflow_dispatch:
   push:
-    branches: [main, live-one-dollar-preflight]
+    branches: [main, live-one-dollar-preflight, relax-xrp-lock-add-strike-direction]
     paths:
       - 'live_broker.py'
       - 'live_execution.py'
