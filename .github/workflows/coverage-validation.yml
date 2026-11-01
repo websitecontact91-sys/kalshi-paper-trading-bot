@@ -49,6 +49,34 @@ jobs:
           python -m compileall -q .
           python -m pytest -q | tee runtime_reports/pytest.txt
 
+      - name: Diagnose recent attempted market settlements (read-only temporary)
+        run: |
+          python - <<'PY'
+          import requests
+          rows = [
+              ("KXNEAR15M-26NOV010800-00","YES","FOK"),
+              ("KXBNB15M-26NOV010830-30","YES","FOK"),
+              ("KXZEC15M-26NOV010900-00","NO","FOK"),
+              ("KXZEC15M-26NOV010915-15","YES","FOK"),
+              ("KXXRP15M-26NOV010930-30","NO","FOK"),
+              ("KXBNB15M-26NOV010945-45","YES","FINAL_REFRESH"),
+              ("KXXRP15M-26NOV011015-15","YES","FOK"),
+              ("KXETH15M-26NOV011030-30","NO","FOK"),
+              ("KXDOGE15M-26NOV011045-45","NO","FINAL_REFRESH"),
+              ("KXETH15M-26NOV011115-15","YES","FOK"),
+              ("KXETH15M-26NOV011215-15","NO","FINAL_REFRESH"),
+              ("KXSOL15M-26NOV011230-30","YES","FINAL_REFRESH"),
+              ("KXDOGE15M-26NOV011315-15","YES","FOK"),
+          ]
+          base = "https://external-api.kalshi.com/trade-api/v2/markets/"
+          for ticker, side, kind in rows:
+              r = requests.get(base + ticker, timeout=10)
+              data = r.json().get("market", r.json()) if r.ok else {}
+              result = str(data.get("result") or "").upper()
+              won = result == side
+              print("RESULT", kind, ticker, side, data.get("status"), result, "WIN" if won else "LOSS")
+          PY
+
       - name: Exercise all six production-runner simulations
         run: |
           set -euo pipefail
