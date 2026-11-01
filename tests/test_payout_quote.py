@@ -4,7 +4,7 @@ from decimal import Decimal as D
 
 import pytest
 
-from payout_quote import PayoutQuote, ask_in_band, payout_eligible
+from payout_quote import PayoutQuote, ask_in_band, payout_eligible, strike_cushion_meets_minimum
 
 
 def Q(debit, payout, budget="5.00"):
@@ -89,3 +89,33 @@ def test_multiplier_uses_actual_debit_not_unused_budget():
     q = Q("4.80", "5.50")
     assert q.displayed_multiplier == D("1.15")
     assert q.pnl(True) == D("0.70")
+
+
+
+@pytest.mark.parametrize("current", ["100012", "99988"])
+def test_strike_cushion_exact_boundary_passes_both_directions(current):
+    assert strike_cushion_meets_minimum(current, "100000")
+
+
+@pytest.mark.parametrize("current", ["100011.99", "99988.01", "100000"])
+def test_strike_cushion_below_minimum_is_rejected(current):
+    assert not strike_cushion_meets_minimum(current, "100000")
+
+
+def test_strike_cushion_clearly_above_minimum_passes():
+    assert strike_cushion_meets_minimum("100500", "100000")
+
+
+def test_strike_cushion_is_symmetric_around_target():
+    assert strike_cushion_meets_minimum("100020", "100000")
+    assert strike_cushion_meets_minimum("99980", "100000")
+
+
+@pytest.mark.parametrize("bad", [None, 0, -1, "NaN", "Infinity", "abc", ""])
+def test_strike_cushion_fails_closed_on_invalid_current(bad):
+    assert not strike_cushion_meets_minimum(bad, "100000")
+
+
+@pytest.mark.parametrize("bad", [None, 0, -1, "NaN", "Infinity", "abc", ""])
+def test_strike_cushion_fails_closed_on_invalid_target(bad):
+    assert not strike_cushion_meets_minimum("100020", bad)
