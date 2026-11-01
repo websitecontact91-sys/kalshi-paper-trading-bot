@@ -36,3 +36,14 @@ def test_new_four_win_streak_is_required_after_ten_dollar_trade():
 def test_old_one_dollar_history_never_counts_toward_boost():
     history = [T("1.00", True)] * 20 + [T("5.00", True)] * 3
     assert next_live_budget(history) == D("5.00")
+
+
+def test_partial_ioc_fill_keeps_selected_tier_for_streak_logic():
+    partial_win = {"budget": "5.00", "won": True, "time_in_force": "immediate_or_cancel",
+                   "quantity": "5.00", "execution": {"quantity": "2.00"}}
+    history = [dict(partial_win) for _ in range(4)]
+    assert next_live_budget(history) == BOOST_LIVE_BUDGET == D("10.00")
+
+    boosted_partial = {"budget": "10.00", "won": True, "time_in_force": "immediate_or_cancel",
+                       "quantity": "10.00", "execution": {"quantity": "1.00"}}
+    assert next_live_budget(history + [boosted_partial]) == BASE_LIVE_BUDGET == D("5.00")

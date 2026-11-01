@@ -85,6 +85,10 @@ Official market results and a matching account settlement are both required to r
 
 The live runner checks available cash before scanning, periodically during the run, immediately before submitting a candidate, and after terminal order outcomes. A failed balance read cannot authorize a new entry from a stale balance. Pending orders continue reconciliation while funds are low. The read-only account check in `--inspect-state` refreshes the separate durable journal's balance and funding mode without placing an order. A later scheduled check can resume an ordinary funds stop if available cash is again at least $1.00; it does not clear an execution-integrity halt.
 
+### IOC journal migration note
+
+New live order intents persist `time_in_force: immediate_or_cancel`. Historical live-journal records that do not contain a `time_in_force` field are intentionally interpreted as `fill_or_kill`, so their prior execution-integrity meaning is unchanged. A terminal IOC partial fill is valid only up to the originally requested quantity; any overfill, inconsistent fill accounting, or unexpectedly resting remainder remains a hard execution breach.
+
 ### Durable intent and recovery
 
 `live_state.py` maintains an independent `kalshi-live.v1` journal bound to environment, subaccount and a hash of the API-key identity. A completed paper session is never imported as real cash or positions. The intent and used-round marker are saved durably before the first order request. The entry window and reference freshness are checked again after account reads and after saving the intent.
