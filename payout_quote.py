@@ -7,6 +7,24 @@ CENT = Decimal("0.01")
 MIN_MULT, MAX_MULT = Decimal("1.10"), Decimal("1.20")
 MIN_ASK, MAX_ASK = Decimal("0.80"), Decimal("0.90")
 
+MIN_ABS_STRIKE_CUSHION_PCT = Decimal("0.012")
+
+
+def strike_cushion_meets_minimum(current, target) -> bool:
+    """True only if abs(current - target) / target * 100 >= 0.012.
+    Fails closed on missing, non-numeric, non-finite, zero or negative input.
+    Exact Decimal arithmetic, no division, no rounding.
+    """
+    try:
+        cur = current if isinstance(current, Decimal) else Decimal(str(current))
+        tgt = target if isinstance(target, Decimal) else Decimal(str(target))
+        if not cur.is_finite() or not tgt.is_finite() or cur <= 0 or tgt <= 0:
+            return False
+        return abs(cur - tgt) * 100 >= MIN_ABS_STRIKE_CUSHION_PCT * tgt
+    except Exception:
+        return False
+
+
 
 def as_decimal(value):
     """Parse finite monetary inputs without silently importing binary floats."""
