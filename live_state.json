@@ -3177,7 +3177,7 @@
       "worst_case_debit": "5.00"
     }
   ],
-  "mode": "RECONCILING",
+  "mode": "WAITING_FOR_SETTLEMENT",
   "pending": {
     "ask": "0.8300",
     "balance_precision": "0.01",
@@ -3186,7 +3186,51 @@
     "close_time": "2026-11-01T18:45:00Z",
     "current": "77836.06",
     "distance_pct": "0.001785836568716742808827994003",
-    "execution": null,
+    "execution": {
+      "debit": "4.199400",
+      "displayed_multiplier": "1.19",
+      "fees": "0.049400",
+      "fill_ids": [
+        "0727f9d9-53b9-a208-c420-0b2163f44459",
+        "0727f9d9-53b9-a4cd-d5e2-93db1097c247",
+        "0727f9d9-53b9-af6d-d3b2-197681e81322"
+      ],
+      "fills": [
+        {
+          "fees": "0.000100",
+          "fill_id": "0727f9d9-53b9-a208-c420-0b2163f44459",
+          "filled_at": "2026-11-01T18:44:07.103625+00:00",
+          "is_taker": true,
+          "observed_at": "2026-11-01T18:44:08.721229+00:00",
+          "price": "0.8300",
+          "quantity": "0.01"
+        },
+        {
+          "fees": "0.000100",
+          "fill_id": "0727f9d9-53b9-a4cd-d5e2-93db1097c247",
+          "filled_at": "2026-11-01T18:44:07.103625+00:00",
+          "is_taker": true,
+          "observed_at": "2026-11-01T18:44:08.721229+00:00",
+          "price": "0.8300",
+          "quantity": "0.01"
+        },
+        {
+          "fees": "0.049200",
+          "fill_id": "0727f9d9-53b9-af6d-d3b2-197681e81322",
+          "filled_at": "2026-11-01T18:44:07.103625+00:00",
+          "is_taker": true,
+          "observed_at": "2026-11-01T18:44:08.721229+00:00",
+          "price": "0.8300",
+          "quantity": "4.98"
+        }
+      ],
+      "first_filled_at": "2026-11-01T18:44:07.103625+00:00",
+      "last_filled_at": "2026-11-01T18:44:07.103625+00:00",
+      "payout": "5.00",
+      "principal": "4.150000",
+      "quantity": "5.00",
+      "weighted_price": "0.8300"
+    },
     "fee_multiplier": "1",
     "observation_time": 1793558641.0,
     "order_id": "01a1986d-10d8-745e-96da-430278d9f60c",
@@ -3202,7 +3246,7 @@
     "series_ticker": "KXBTC15M",
     "side": "YES",
     "source_sha": "65587af914b18bc9091054cc6c4f6db9ce10c210",
-    "stage": "ACKNOWLEDGED",
+    "stage": "FILLED",
     "submitted_at": "2026-11-01T18:44:07.086472+00:00",
     "target": "77834.67",
     "ticker": "KXBTC15M-26NOV011345-45",
