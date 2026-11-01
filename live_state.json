@@ -3189,7 +3189,7 @@
     "execution": null,
     "fee_multiplier": "1",
     "observation_time": 1793558641.0,
-    "order_id": null,
+    "order_id": "01a1986d-10d8-745e-96da-430278d9f60c",
     "prepared_at": "2026-11-01T18:44:03.946931+00:00",
     "probability_field": "kalshi_orderbook:1-best_NO_bid",
     "quantity": "5.00",
@@ -3202,7 +3202,8 @@
     "series_ticker": "KXBTC15M",
     "side": "YES",
     "source_sha": "65587af914b18bc9091054cc6c4f6db9ce10c210",
-    "stage": "INTENT",
+    "stage": "ACKNOWLEDGED",
+    "submitted_at": "2026-11-01T18:44:07.086472+00:00",
     "target": "77834.67",
     "ticker": "KXBTC15M-26NOV011345-45",
     "worst_case_debit": "5.00"
