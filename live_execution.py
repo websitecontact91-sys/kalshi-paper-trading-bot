@@ -15,7 +15,13 @@ from live_broker import BrokerError, OrderRejected, TradingDisabled, worst_case_
 from live_state import (LiveStateError, execution_breaches, money, validate, apply_balance,
                         FUNDS_POLICY, NON_HALTING_EXECUTION_WARNINGS, warning_only_halt)
 from live_stakes import MAX_LIVE_BUDGET, NEW_LIVE_BUDGETS
-from payout_quote import PayoutQuote, ask_in_band, payout_eligible, as_decimal
+from payout_quote import (
+    PayoutQuote,
+    ask_in_band,
+    payout_eligible,
+    as_decimal,
+    strike_cushion_meets_minimum,
+)
 from quote_adapter import documented_taker_cost
 from timing import (MAX_FUTURE_S, entry_time_eligible, in_entry_window,
                     observation_fresh, round_key, timestamp)
@@ -353,6 +359,8 @@ class LiveExecution:
             signed_difference = current - target if c["side"] == "YES" else target - current
             if signed_difference <= 0:
                 raise ValueError("selected_side_not_confirmed")
+            if not strike_cushion_meets_minimum(current, target):
+                raise ValueError("strike_cushion_below_minimum")
             c["current"], c["target"] = str(current), str(target)
             for field in ("ask", "quantity", "budget", "debit", "payout", "principal", "fees", "fee_multiplier"):
                 c[field] = str(as_decimal(c[field]))
