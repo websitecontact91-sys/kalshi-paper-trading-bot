@@ -602,16 +602,24 @@ def _partial(fx):
     fx.broker.executions[0].update(count_fp=".50", fee_cost=".005")
 
 
-def test_partial_fill_is_tracked_and_settled_but_never_allows_another_entry(fx):
+def test_partial_ioc_fill_is_tracked_and_settled_without_breach(fx):
     fx.broker.submit_error = AmbiguousOrderError("mock")
     fx.engine.submit(candidate(fx.clock))
     _partial(fx)
-    assert fx.engine.reconcile() == "HALTED"
-    assert D(fx.engine.state["pending"]["execution"]["quantity"]) == D(".50")
+    assert fx.engine.reconcile() == "WAITING_FOR_SETTLEMENT"
+    pending = fx.engine.state["pending"]
+    assert pending["time_in_force"] == "immediate_or_cancel"
+    assert D(pending["execution"]["quantity"]) == D(".50")
+    assert D(pending["execution"]["principal"]) == D(".445")
+    assert D(pending["execution"]["fees"]) == D(".005")
+    assert D(pending["execution"]["debit"]) == D(".45")
+    assert D(pending["execution"]["payout"]) == D(".50")
+    assert not execution_breaches(pending)
     fx.settle("yes", quantity=".50", fees=".005", revenue=50)
-    assert fx.engine.reconcile() == "HALTED"
+    assert fx.engine.reconcile() == "SCANNING"
     assert D(fx.engine.state["realized_pnl"]) == D(".05")
     assert fx.engine.state["pending"] is None and len(fx.broker.posts) == 1
+    assert fx.engine.submit(candidate(fx.clock)) == "BLOCKED_ALREADY_ATTEMPTED_ROUND"
 
 
 def test_unfilled_cancellation_consumes_attempt_without_counting_a_trade(fx):
@@ -735,34 +743,34 @@ def test_fee_model_disagreement_is_rejected_before_any_durable_intent(fx):
     assert not fx.broker.posts and not fx.broker.reads
 
 
-@pytest.mark.parametrize("remove_metadata", [False, True])
-def test_historical_partial_fill_cannot_resume_by_changing_saved_mode(fx, remove_metadata):
+@pytest.mark.parametrize("legacy_field", ["fill_or_kill", None])
+def test_historical_fok_or_legacy_partial_fill_remains_a_breach(fx, legacy_field):
     fx.broker.submit_error = AmbiguousOrderError("mock")
     fx.engine.submit(candidate(fx.clock))
     _partial(fx)
-    fx.engine.reconcile()
-    fx.settle("yes", quantity=".50", fees=".005", revenue=50)
-    assert fx.engine.reconcile() == "HALTED"
+    assert fx.engine.reconcile() == "WAITING_FOR_SETTLEMENT"
     state = load(fx.path)
+    if legacy_field is None:
+        state["pending"].pop("time_in_force", None)
+    else:
+        state["pending"]["time_in_force"] = legacy_field
+    assert "partial_fill_of_fill_or_kill_order" in execution_breaches(state["pending"])
     state["mode"] = "SCANNING"
-    if remove_metadata:
-        state["halt_reason"] = None
-        state["history"][0]["risk_flags"] = []
-    with pytest.raises(LiveStateError): validate(state)
     with pytest.raises(LiveStateError):
-        LiveExecution(fx.broker, state, persist_state=fx.persist, official_market=lambda _: {}, armed=True)
-    assert len(fx.broker.posts) == 1
+        validate(state)
 
 
-def test_in_memory_mode_change_cannot_clear_an_execution_halt(fx):
+def test_ioc_partial_fill_survives_restart_and_settles_without_resubmission(fx):
     fx.broker.submit_error = AmbiguousOrderError("mock")
     fx.engine.submit(candidate(fx.clock))
     _partial(fx)
-    fx.engine.reconcile()
+    assert fx.engine.reconcile() == "WAITING_FOR_SETTLEMENT"
+    saved = load(fx.path)
+    assert D(saved["pending"]["execution"]["quantity"]) == D(".50")
+    restarted = fx.restart(armed=True)
     fx.settle("yes", quantity=".50", fees=".005", revenue=50)
-    fx.engine.reconcile()
-    fx.engine.state["mode"] = "SCANNING"
-    assert fx.engine.submit(candidate(fx.clock)) == "HALTED"
+    assert restarted.reconcile() == "SCANNING"
+    assert D(restarted.state["realized_pnl"]) == D(".05")
     assert len(fx.broker.posts) == 1
 
 
@@ -1135,3 +1143,135 @@ def test_cash_below_selected_tier_blocks_entry_without_changing_one_dollar_stop_
     assert fx.engine.state["mode"] == "SCANNING"
     assert fx.engine.state["stop_reason"] is None
     assert not fx.broker.posts
+
+
+def test_full_ioc_fill_position_equals_requested_quantity(fx):
+    assert fx.engine.submit(candidate(fx.clock)) == "WAITING_FOR_SETTLEMENT"
+    pending = fx.engine.state["pending"]
+    assert pending["time_in_force"] == "immediate_or_cancel"
+    assert D(pending["execution"]["quantity"]) == D(pending["quantity"]) == D("1.00")
+    assert not execution_breaches(pending)
+
+
+def test_zero_ioc_fill_is_unfilled_and_never_retried(fx):
+    fx.broker.submit_error = AmbiguousOrderError("mock")
+    fx.engine.submit(candidate(fx.clock))
+    fx.broker.order.update(fill_count_fp="0", remaining_count_fp="0", status="canceled",
+                           taker_fill_cost_dollars="0", taker_fees_dollars="0")
+    fx.broker.executions = []
+    assert fx.engine.reconcile() == "SCANNING"
+    attempt = fx.engine.state["attempts"][-1]
+    assert attempt["outcome"] == "UNFILLED"
+    assert attempt["reason"] == "immediate_or_cancel_unfilled"
+    assert attempt["time_in_force"] == "immediate_or_cancel"
+    assert fx.engine.submit(candidate(fx.clock)) == "BLOCKED_ALREADY_ATTEMPTED_ROUND"
+    assert len(fx.broker.posts) == 1
+
+
+def test_ioc_cancelled_remainder_is_harmless_after_partial_fill(fx):
+    fx.broker.submit_error = AmbiguousOrderError("mock")
+    fx.engine.submit(candidate(fx.clock))
+    _partial(fx)
+    assert fx.broker.order["status"] == "canceled"
+    assert D(fx.broker.order["remaining_count_fp"]) == 0
+    assert fx.engine.reconcile() == "WAITING_FOR_SETTLEMENT"
+    assert not execution_breaches(fx.engine.state["pending"])
+
+
+def test_ioc_resting_remainder_is_a_hard_halt(fx):
+    fx.broker.submit_error = AmbiguousOrderError("mock")
+    fx.engine.submit(candidate(fx.clock))
+    fx.broker.order.update(fill_count_fp=".50", remaining_count_fp=".50", status="resting",
+                           taker_fill_cost_dollars=".445", taker_fees_dollars=".005")
+    fx.broker.executions[0].update(count_fp=".50", fee_cost=".005")
+    assert fx.engine.reconcile() == "HALTED"
+    assert "unexpected_remaining_order" in fx.engine.state["halt_reason"]
+    assert len(fx.broker.posts) == 1
+
+
+def test_partial_ioc_settlement_win_uses_actual_quantity_and_debit(fx):
+    fx.broker.submit_error = AmbiguousOrderError("mock")
+    fx.engine.submit(candidate(fx.clock))
+    _partial(fx)
+    assert fx.engine.reconcile() == "WAITING_FOR_SETTLEMENT"
+    fx.settle("yes", quantity=".50", fees=".005", revenue=50)
+    assert fx.engine.reconcile() == "SCANNING"
+    trade = fx.engine.state["history"][-1]
+    assert D(trade["execution"]["quantity"]) == D(".50")
+    assert D(trade["cash_payout"]) == D(".50")
+    assert D(trade["pnl"]) == D(".05")
+
+
+def test_partial_ioc_settlement_loss_uses_actual_debit_only(fx):
+    fx.broker.submit_error = AmbiguousOrderError("mock")
+    fx.engine.submit(candidate(fx.clock))
+    _partial(fx)
+    assert fx.engine.reconcile() == "WAITING_FOR_SETTLEMENT"
+    fx.settle("no", quantity=".50", fees=".005", revenue=0)
+    assert fx.engine.reconcile() == "SCANNING"
+    trade = fx.engine.state["history"][-1]
+    assert D(trade["execution"]["debit"]) == D(".45")
+    assert D(trade["cash_payout"]) == 0
+    assert D(trade["pnl"]) == D("-.45")
+    assert D(fx.engine.state["realized_pnl"]) == D("-.45")
+
+
+def test_ioc_filled_quantity_above_requested_is_a_breach(fx):
+    assert fx.engine.submit(candidate(fx.clock)) == "WAITING_FOR_SETTLEMENT"
+    state = load(fx.path)
+    execution = state["pending"]["execution"]
+    execution["quantity"] = "1.50"
+    execution["payout"] = "1.50"
+    execution["principal"] = "1.335"
+    execution["fees"] = ".015"
+    execution["debit"] = "1.35"
+    execution["weighted_price"] = ".89"
+    execution["fills"][0]["quantity"] = "1.50"
+    execution["fills"][0]["fees"] = ".015"
+    assert "filled_quantity_exceeds_request" in execution_breaches(state["pending"])
+
+
+def test_legacy_record_without_time_in_force_defaults_to_fok(fx):
+    fx.broker.submit_error = AmbiguousOrderError("mock")
+    fx.engine.submit(candidate(fx.clock))
+    _partial(fx)
+    assert fx.engine.reconcile() == "WAITING_FOR_SETTLEMENT"
+    state = load(fx.path)
+    state["pending"].pop("time_in_force", None)
+    assert "partial_fill_of_fill_or_kill_order" in execution_breaches(state["pending"])
+
+
+def test_mixed_legacy_fok_and_new_ioc_history_validates_in_one_pass(fx):
+    fx.engine.submit(candidate(fx.clock))
+    fx.settle("yes")
+    assert fx.engine.reconcile() == "SCANNING"
+    first = load(fx.path)
+    first["history"][0].pop("time_in_force", None)
+    save(fx.path, first)
+
+    fx.clock.now = CLOSE + 870
+    fx.market.update(status="active", result="")
+    fx.broker.settled = []
+    engine = fx.restart(armed=True)
+    next_close = CLOSE + 900
+    fx.broker.submit_error = AmbiguousOrderError("mock")
+    engine.submit(candidate(fx.clock, round_key=round_key(next_close), close_time=iso(next_close)))
+    _partial(fx)
+    assert engine.reconcile() == "WAITING_FOR_SETTLEMENT"
+    fx.settle("yes", quantity=".50", fees=".005", revenue=50)
+    fx.broker.settled[0]["settled_time"] = iso(next_close + 30)
+    assert engine.reconcile() == "SCANNING"
+    mixed = load(fx.path)
+    assert "time_in_force" not in mixed["history"][0]
+    assert mixed["history"][1]["time_in_force"] == "immediate_or_cancel"
+    validate(mixed)
+
+
+def test_partial_ioc_fill_consumes_round_before_settlement(fx):
+    fx.broker.submit_error = AmbiguousOrderError("mock")
+    fx.engine.submit(candidate(fx.clock))
+    _partial(fx)
+    assert fx.engine.reconcile() == "WAITING_FOR_SETTLEMENT"
+    assert fx.engine.submit(candidate(fx.clock)) == "WAITING_FOR_SETTLEMENT"
+    assert len(fx.broker.posts) == 1
+    assert fx.engine.state["attempted_rounds"] == [round_key(CLOSE)]
