@@ -1044,6 +1044,76 @@ def test_xrp_style_81_to_29_collapse_still_never_reaches_post(fx):
     assert load(fx.path)["pending"] is None
 
 
+
+
+
+def test_first_refresh_identity_change_is_rejected(fx):
+    def refresher(original):
+        fresh = copy.deepcopy(original)
+        fresh["ticker"] = "KXETH15M-OTHER"
+        return fresh
+    engine = fx.restart(armed=True, candidate_refresher=refresher)
+    with pytest.raises(CandidateInvalid, match="identity_changed"):
+        engine.submit(candidate(fx.clock))
+    assert not fx.broker.posts
+
+
+def test_second_refresh_stale_or_too_late_is_not_sent(fx):
+    calls = []
+    def refresher(original):
+        calls.append("refresh")
+        if len(calls) == 2:
+            fx.clock.now = CLOSE - 9
+        return copy.deepcopy(original)
+    engine = fx.restart(armed=True, candidate_refresher=refresher)
+    assert engine.submit(candidate(fx.clock)) == "SCANNING"
+    assert not fx.broker.posts
+    assert load(fx.path)["attempts"][-1]["reason"] == "final_refresh_no_longer_eligible"
+
+
+def test_second_refresh_payout_out_of_band_is_not_sent(fx):
+    calls = []
+    def refresher(original):
+        calls.append("refresh")
+        if len(calls) == 1:
+            return copy.deepcopy(original)
+        # 80c with one contract and cent-rounded fees produces a displayed
+        # payout above the live 1.20x ceiling.
+        return repriced_candidate(fx.clock, ask=".80", current="101.10")
+    engine = fx.restart(armed=True, candidate_refresher=refresher)
+    assert engine.submit(candidate(fx.clock)) == "SCANNING"
+    assert not fx.broker.posts
+    assert load(fx.path)["attempts"][-1]["reason"] == "final_refresh_no_longer_eligible"
+
+
+def test_second_refresh_wrong_side_is_not_sent(fx):
+    calls = []
+    def refresher(original):
+        calls.append("refresh")
+        if len(calls) == 1:
+            return copy.deepcopy(original)
+        return repriced_candidate(fx.clock, current="99.90")
+    engine = fx.restart(armed=True, candidate_refresher=refresher)
+    assert engine.submit(candidate(fx.clock)) == "SCANNING"
+    assert not fx.broker.posts
+    assert load(fx.path)["attempts"][-1]["reason"] == "final_refresh_no_longer_eligible"
+
+
+def test_refreshed_zero_quantity_cannot_reach_post(fx):
+    calls = []
+    def refresher(original):
+        calls.append("refresh")
+        if len(calls) == 1:
+            return copy.deepcopy(original)
+        bad = copy.deepcopy(original)
+        bad.update(quantity="0.00", payout="0.00", principal="0.00", fees="0.00", debit="0.00")
+        return bad
+    engine = fx.restart(armed=True, candidate_refresher=refresher)
+    assert engine.submit(candidate(fx.clock)) == "SCANNING"
+    assert not fx.broker.posts
+    assert load(fx.path)["attempts"][-1]["reason"] == "final_refresh_no_longer_eligible"
+
+
 def test_five_year_style_wrong_side_candidate_never_submits(fx):
     trade = candidate(fx.clock)
     trade.update(current="4.70205221", target="4.70117", side="NO")
