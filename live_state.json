@@ -3318,7 +3318,7 @@
       "worst_case_debit": "0.95"
     }
   ],
-  "mode": "RECONCILING",
+  "mode": "WAITING_FOR_SETTLEMENT",
   "pending": {
     "ask": "0.8700",
     "balance_precision": "0.01",
@@ -3327,7 +3327,31 @@
     "close_time": "2026-11-01T20:30:00Z",
     "current": "77665.08",
     "distance_pct": "0.007596144660463921016575302642",
-    "execution": null,
+    "execution": {
+      "debit": "3.767400",
+      "displayed_multiplier": "1.33",
+      "fees": "0.067400",
+      "fill_ids": [
+        "0727fbf8-46b9-9ac4-b8ed-e76724cee600"
+      ],
+      "fills": [
+        {
+          "fees": "0.067400",
+          "fill_id": "0727fbf8-46b9-9ac4-b8ed-e76724cee600",
+          "filled_at": "2026-11-01T20:29:11.345600+00:00",
+          "is_taker": true,
+          "observed_at": "2026-11-01T20:29:13.040034+00:00",
+          "price": "0.7400",
+          "quantity": "5.00"
+        }
+      ],
+      "first_filled_at": "2026-11-01T20:29:11.345600+00:00",
+      "last_filled_at": "2026-11-01T20:29:11.345600+00:00",
+      "payout": "5.00",
+      "principal": "3.700000",
+      "quantity": "5.00",
+      "weighted_price": "0.7400"
+    },
     "fee_multiplier": "1",
     "observation_time": 1793564943.0,
     "order_id": "01a198cd-41d8-78ec-8ef6-88705816e5ed",
@@ -3338,12 +3362,15 @@
     "quoted_fees": "0.040000",
     "quoted_payout": "5.00",
     "quoted_principal": "4.350000",
-    "risk_flags": [],
+    "risk_flags": [
+      "actual_payout_multiple_out_of_band",
+      "fill_price_out_of_band"
+    ],
     "round_key": "1992850",
     "series_ticker": "KXBTC15M",
     "side": "NO",
     "source_sha": "55509715c01830dae9b04b51ff199848f06aa0b7",
-    "stage": "ACKNOWLEDGED",
+    "stage": "FILLED",
     "submitted_at": "2026-11-01T20:29:11.324464+00:00",
     "target": "77670.98",
     "ticker": "KXBTC15M-26NOV011530-30",
