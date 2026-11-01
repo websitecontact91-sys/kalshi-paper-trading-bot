@@ -147,6 +147,19 @@ def warning_only_halt(reason):
     return bool(flags) and flags <= NON_HALTING_EXECUTION_WARNINGS
 
 
+def _time_in_force(record):
+    """Return stored time-in-force; legacy records default to FOK.
+
+    Migration note: live journal records created before time_in_force was
+    persisted are intentionally interpreted as fill_or_kill so historical
+    execution semantics do not change.
+    """
+    value = record.get("time_in_force", "fill_or_kill")
+    if value not in {"fill_or_kill", "immediate_or_cancel"}:
+        raise LiveStateError("Invalid time in force")
+    return value
+
+
 def execution_breaches(record):
     """Derive lasting execution breaches; price/multiplier deviations remain warnings only."""
     flags = record.get("risk_flags", [])
@@ -157,7 +170,11 @@ def execution_breaches(record):
     if execution is None:
         return breaches
     actual = _execution(execution)
-    if actual["quantity"] != money(record.get("quantity"), "requested quantity"):
+    requested = money(record.get("quantity"), "requested quantity")
+    time_in_force = _time_in_force(record)
+    if actual["quantity"] > requested:
+        breaches.add("filled_quantity_exceeds_request")
+    elif actual["quantity"] < requested and time_in_force != "immediate_or_cancel":
         breaches.add("partial_fill_of_fill_or_kill_order")
     if actual["debit"] > money(record.get("budget"), "budget"):
         breaches.add("actual_debit_exceeds_budget")
@@ -238,6 +255,7 @@ def validate(state):
     seen_rounds, seen_clients = [], []
     for item in records:
         _identity(item)
+        _time_in_force(item)
         if execution_breaches(item) and mode not in {"HALTED", "STOPPED"}:
             raise LiveStateError("An execution breach must remain halted or stopped")
         seen_rounds.append(item["round_key"])
