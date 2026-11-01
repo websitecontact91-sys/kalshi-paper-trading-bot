@@ -353,18 +353,15 @@ class LiveExecution:
             if not entry_time_eligible(c["close_time"], now) or not observation_fresh(c["observation_time"], now):
                 raise ValueError("entry_window_or_reference_expired")
             current = as_decimal(c["current"])
-target = as_decimal(c["target"])
-if current <= 0 or target <= 0:
-    raise ValueError("invalid_reference_or_target")
-
-signed_difference = current - target if c["side"] == "YES" else target - current
-if signed_difference <= 0:
-    raise ValueError("selected_side_not_confirmed")
-
-if not strike_cushion_meets_minimum(current, target):
-    raise ValueError("strike_cushion_below_minimum")
-
-c["current"], c["target"] = str(current), str(target)
+            target = as_decimal(c["target"])
+            if current <= 0 or target <= 0:
+                raise ValueError("invalid_reference_or_target")
+            signed_difference = current - target if c["side"] == "YES" else target - current
+            if signed_difference <= 0:
+                raise ValueError("selected_side_not_confirmed")
+            if not strike_cushion_meets_minimum(current, target):
+                raise ValueError("strike_cushion_below_minimum")
+            c["current"], c["target"] = str(current), str(target)
             for field in ("ask", "quantity", "budget", "debit", "payout", "principal", "fees", "fee_multiplier"):
                 c[field] = str(as_decimal(c[field]))
             c["balance_precision"] = str(as_decimal(c.get("balance_precision", "0.01")))
