@@ -138,7 +138,7 @@ def test_invalid_or_stale_candidate_does_not_reach_selection(change):
     assert list(provider.candidates()) == []
 
 
-@pytest.mark.parametrize('price', ['.79', '.80', '.91'])
+@pytest.mark.parametrize('price', ['.79', '.80', '.96'])
 def test_ask_and_fee_inclusive_payout_bands_both_apply(price):
     # At 80c, the conservatively rounded $1-contract example displays 1.22x,
     # so meeting the ask band alone is not enough.
@@ -176,7 +176,7 @@ def test_final_refresh_revalidates_time_reference_identity_and_executable_price(
         elif reason == 'identity':
             fresh['market']['ticker'] = 'KXBTC15M-OTHER'
         else:
-            fresh = snapshot(price='.91', remaining=50)
+            fresh = snapshot(price='.96', remaining=50)
         return fresh
     client.refresh_hook = refresh
     assert list(provider.candidates()) == []
@@ -187,7 +187,7 @@ def test_changed_best_quote_falls_back_to_next_ranked_market():
                                    snapshot('KXETH15M-TEST', current='101')])
     def refresh(fresh):
         if fresh['market']['ticker'] == 'KXBTC15M-TEST':
-            return snapshot('KXBTC15M-TEST', price='.91', current='102')
+            return snapshot('KXBTC15M-TEST', price='.96', current='102')
         return fresh
     client.refresh_hook = refresh
     assert [x['ticker'] for x in provider.candidates()] == ['KXETH15M-TEST']
