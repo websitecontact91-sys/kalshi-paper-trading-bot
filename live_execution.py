@@ -389,19 +389,14 @@ class LiveExecution:
         except (KeyError, TypeError, ValueError, ArithmeticError, BrokerError) as exc:
             raise CandidateInvalid("Live candidate failed final validation: " + str(exc)) from exc
 
-    @staticmethod
-    def _signed_strike_distance(candidate):
-        current = as_decimal(candidate["current"])
-        target = as_decimal(candidate["target"])
-        return current - target if candidate["side"] == "YES" else target - current
-
     def _locked_candidate(self, candidate):
         """Refresh the exact selected market and revalidate the live strategy.
 
-        Normal executable-price/depth drift is allowed when the refreshed trade
-        still satisfies every live rule. Market identity, selected outcome,
-        round, strike and stake tier remain locked. The selected-side cushion
-        from the strike may stay unchanged or increase, but may not shrink.
+        Normal executable-price/depth and underlying movement are allowed when
+        the refreshed trade still satisfies every live rule. Market identity,
+        selected outcome, round, strike and stake tier remain locked. The
+        selected side must remain confirmed and the absolute strike cushion must
+        remain at least the configured 0.012%% minimum on every refresh.
         """
         previous = self._validate_candidate(candidate)
         if self.candidate_refresher is None:
@@ -411,8 +406,6 @@ class LiveExecution:
         for field in identity_fields:
             if str(fresh.get(field)) != str(previous.get(field)):
                 raise CandidateInvalid("final_refresh_identity_changed:" + field)
-        if self._signed_strike_distance(fresh) < self._signed_strike_distance(previous):
-            raise CandidateInvalid("underlying_moved_toward_strike")
         return fresh
 
     def _refresh_pending_intent(self, candidate):
@@ -475,7 +468,7 @@ class LiveExecution:
         # Account reads can consume several seconds in the final minute. Re-read
         # the exact selected market after those checks. Normal quote/depth drift
         # is allowed only when the refreshed trade still satisfies every live
-        # rule and its selected-side cushion from the strike has not shrunk.
+        # rule, including selected-side confirmation and the absolute 0.012%% strike cushion.
         c = self._locked_candidate(c)
         pending = {key: c[key] for key in ("ticker", "side", "round_key", "close_time", "observation_time",
                     "ask", "quantity", "budget", "fee_multiplier", "balance_precision", "worst_case_debit")}
@@ -497,16 +490,14 @@ class LiveExecution:
         if not entry_time_eligible(c["close_time"], self.clock()) or not observation_fresh(c["observation_time"], self.clock()):
             return self._finish_unfilled("NOT_SENT", "expired_after_durable_intent")
         # The durable write itself may consume time. Refresh once more immediately
-        # before POST and require the refreshed trade to remain fully eligible
-        # without moving toward the strike. Persist the latest intended order
+        # before POST and require the refreshed trade to remain fully eligible,
+        # including selected-side confirmation and the absolute 0.012%% strike cushion.
+        # Persist the latest intended order
         # terms before the POST so reconciliation never depends on stale values.
         try:
             c = self._locked_candidate(c)
         except CandidateInvalid as exc:
-            reason = ("underlying_moved_toward_strike"
-                      if "underlying_moved_toward_strike" in str(exc)
-                      else "final_refresh_no_longer_eligible")
-            return self._finish_unfilled("NOT_SENT", reason)
+            return self._finish_unfilled("NOT_SENT", "final_refresh_no_longer_eligible")
         self._refresh_pending_intent(c)
         if self.source_update is not None:
             return "SOURCE_UPDATE_HANDOFF"
@@ -593,10 +584,7 @@ class LiveExecution:
         try:
             c = self._locked_candidate(self._candidate_from_pending(pending))
         except CandidateInvalid as exc:
-            reason = ("underlying_moved_toward_strike"
-                      if "underlying_moved_toward_strike" in str(exc)
-                      else "ioc_retry_no_longer_eligible")
-            return self._finish_unfilled("UNFILLED", reason)
+            return self._finish_unfilled("UNFILLED", "ioc_retry_no_longer_eligible")
 
         if not entry_time_eligible(c["close_time"], self.clock()) or not observation_fresh(c["observation_time"], self.clock()):
             return self._finish_unfilled("UNFILLED", "ioc_retry_expired_before_intent")
@@ -638,10 +626,7 @@ class LiveExecution:
         try:
             c = self._locked_candidate(c)
         except CandidateInvalid as exc:
-            reason = ("underlying_moved_toward_strike"
-                      if "underlying_moved_toward_strike" in str(exc)
-                      else "ioc_retry_final_refresh_no_longer_eligible")
-            return self._finish_unfilled("UNFILLED", reason)
+            return self._finish_unfilled("UNFILLED", "ioc_retry_final_refresh_no_longer_eligible")
         self._refresh_pending_intent(c)
         if self.source_update is not None:
             return "SOURCE_UPDATE_HANDOFF"
