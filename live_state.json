@@ -5153,7 +5153,7 @@
       "worst_case_debit": "4.30"
     }
   ],
-  "mode": "RECONCILING",
+  "mode": "WAITING_FOR_SETTLEMENT",
   "pending": {
     "ask": "0.9500",
     "balance_precision": "0.01",
@@ -5162,7 +5162,31 @@
     "close_time": "2026-11-02T13:45:00Z",
     "current": "5.26968222",
     "distance_pct": "0.1222066173502169203563975869",
-    "execution": null,
+    "execution": {
+      "debit": "4.766700",
+      "displayed_multiplier": "1.05",
+      "fees": "0.016700",
+      "fill_ids": [
+        "0727ee7c-15e9-bd52-eaa9-5e87abb8e87f"
+      ],
+      "fills": [
+        {
+          "fees": "0.016700",
+          "fill_id": "0727ee7c-15e9-bd52-eaa9-5e87abb8e87f",
+          "filled_at": "2026-11-02T13:44:04.755011+00:00",
+          "is_taker": true,
+          "observed_at": "2026-11-02T13:44:06.462084+00:00",
+          "price": "0.9500",
+          "quantity": "5.00"
+        }
+      ],
+      "first_filled_at": "2026-11-02T13:44:04.755011+00:00",
+      "last_filled_at": "2026-11-02T13:44:04.755011+00:00",
+      "payout": "5.00",
+      "principal": "4.750000",
+      "quantity": "5.00",
+      "weighted_price": "0.9500"
+    },
     "fee_multiplier": "1",
     "observation_time": 1793627043.0,
     "order_id": "01a19c80-b8a0-735b-92e3-86c67f8f07cd",
@@ -5178,7 +5202,7 @@
     "series_ticker": "KX30YRRATE15M",
     "side": "NO",
     "source_sha": "e7045e699863b4f64954003cb709dc7363804740",
-    "stage": "ACKNOWLEDGED",
+    "stage": "FILLED",
     "submitted_at": "2026-11-02T13:44:04.744392+00:00",
     "target": "5.27613",
     "ticker": "KX30YRRATE15M-26NOV020845-45",
