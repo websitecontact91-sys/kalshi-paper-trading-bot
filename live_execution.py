@@ -396,7 +396,7 @@ class LiveExecution:
         the refreshed trade still satisfies every live rule. Market identity,
         selected outcome, round, strike and stake tier remain locked. The
         selected side must remain confirmed and the absolute strike cushion must
-        remain at least the configured 0.012%% minimum on every refresh.
+        remain at least the configured 0.012% minimum on every refresh.
         """
         previous = self._validate_candidate(candidate)
         if self.candidate_refresher is None:
@@ -468,7 +468,7 @@ class LiveExecution:
         # Account reads can consume several seconds in the final minute. Re-read
         # the exact selected market after those checks. Normal quote/depth drift
         # is allowed only when the refreshed trade still satisfies every live
-        # rule, including selected-side confirmation and the absolute 0.012%% strike cushion.
+        # rule, including selected-side confirmation and the absolute 0.012% strike cushion.
         c = self._locked_candidate(c)
         pending = {key: c[key] for key in ("ticker", "side", "round_key", "close_time", "observation_time",
                     "ask", "quantity", "budget", "fee_multiplier", "balance_precision", "worst_case_debit")}
@@ -491,7 +491,7 @@ class LiveExecution:
             return self._finish_unfilled("NOT_SENT", "expired_after_durable_intent")
         # The durable write itself may consume time. Refresh once more immediately
         # before POST and require the refreshed trade to remain fully eligible,
-        # including selected-side confirmation and the absolute 0.012%% strike cushion.
+        # including selected-side confirmation and the absolute 0.012% strike cushion.
         # Persist the latest intended order
         # terms before the POST so reconciliation never depends on stale values.
         try:
