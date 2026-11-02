@@ -44,7 +44,7 @@ def test_equal_distance_prefers_exact_payout_then_ticker_and_side():
 
 def test_no_eligible_candidate_has_explicit_reasons():
     stale = C(fresh=False)
-    bad_ask = C(ask="0.91")
+    bad_ask = C(ask="0.96")
     bad_payout = C(payout="1.00")
     assert select([stale, bad_ask, bad_payout]) is None
     assert select([]) is None
