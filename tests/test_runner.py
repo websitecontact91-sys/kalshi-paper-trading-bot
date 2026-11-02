@@ -52,7 +52,7 @@ def test_final_refresh_ask_change_falls_back_to_next_rank(live_engine):
     client = FakeKalshiClient(clock, tickers=('KXBTC15M-TEST','KXSOL15M-TEST'))
     def change(result):
         if result['market']['ticker'].startswith('KXBTC'):
-            result['asks']['YES'] = D('0.91')
+            result['asks']['YES'] = D('0.96')
     client.snapshot_hook = change
     engine.client = client
     engine.tick()
