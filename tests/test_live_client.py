@@ -203,7 +203,7 @@ def test_configured_api_mode_produces_eligible_quote_from_live_adapter(adapter):
 
 
 @pytest.mark.parametrize("summary_ask,book_ask,expected_reason", [
-    ("0.87", "0.91", "ask_out_of_band"),
+    ("0.87", "0.96", "ask_out_of_band"),
     ("0.79", "0.87", None),
     (None, "0.87", None),
 ])
@@ -234,12 +234,12 @@ def test_final_revalidation_recomputes_from_changed_book_despite_unchanged_summa
     original = copy.deepcopy(api.current)
     initial = client.batch_snapshots([original])[0]
     assert initial["asks"]["YES"] == D("0.87")
-    api.book["orderbook_fp"]["no_dollars"] = [["0.09", "100"]]
+    api.book["orderbook_fp"]["no_dollars"] = [["0.04", "100"]]
     final = client.snapshot(original)
     candidate = Candidate(api.current["ticker"], "YES", final["asks"]["YES"],
                           final["current"], D("100.00"), final["quotes"]["YES"].quote, True)
     assert final["summary_asks"]["YES"] == initial["summary_asks"]["YES"] == D("0.87")
-    assert final["asks"]["YES"] == D("0.91")
+    assert final["asks"]["YES"] == D("0.96")
     assert rejection_reason(candidate) == "ask_out_of_band"
     assert api.calls["market"] == 1 and api.calls["orderbook"] == 1
 
