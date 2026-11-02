@@ -537,6 +537,141 @@ class LiveExecution:
         self._commit(updated, "LIVE_ORDER_ACKNOWLEDGED")
         return "SOURCE_UPDATE_HANDOFF" if self.source_update is not None else self.reconcile()
 
+    def _candidate_from_pending(self, pending):
+        """Reconstruct the exact last validated candidate for a bounded IOC retry."""
+        candidate = {
+            "ticker": pending["ticker"], "side": pending["side"],
+            "round_key": pending["round_key"], "close_time": pending["close_time"],
+            "observation_time": pending["observation_time"], "ask": pending["ask"],
+            "quantity": pending["quantity"], "budget": pending["budget"],
+            "debit": pending["quoted_debit"], "payout": pending["quoted_payout"],
+            "principal": pending["quoted_principal"], "fees": pending["quoted_fees"],
+            "fee_multiplier": pending["fee_multiplier"],
+            "balance_precision": pending["balance_precision"],
+        }
+        for key in ("current", "target", "distance_pct", "series_ticker", "probability_field"):
+            if key in pending:
+                candidate[key] = pending[key]
+        return candidate
+
+    def _retry_zero_fill_ioc(self):
+        """Allow exactly one second IOC only after a confirmed zero-fill terminal IOC.
+
+        The retry preserves the original round, market, side, strike and stake tier.
+        It repeats the exchange/account/exposure preflight and both live candidate
+        refreshes before a new POST. Any partial fill, uncertainty, resting order,
+        failed rule, or second zero fill remains terminal for the round.
+        """
+        pending = copy.deepcopy(self.state["pending"])
+        try:
+            retry_count = int(pending.get("ioc_zero_fill_retries", 0))
+        except (TypeError, ValueError):
+            return self._halt("invalid_ioc_retry_count")
+        if retry_count >= 1:
+            return self._finish_unfilled("UNFILLED", "immediate_or_cancel_unfilled")
+        if self.candidate_refresher is None:
+            return self._finish_unfilled("UNFILLED", "ioc_retry_refresh_unavailable")
+
+        try:
+            status = self.broker.exchange_status()
+            if status.get("exchange_active") is not True or status.get("trading_active") is not True:
+                return self._finish_unfilled("UNFILLED", "ioc_retry_exchange_inactive")
+            shards = status.get("exchange_index_statuses", [])
+            if (not isinstance(shards, list)
+                    or any(x.get("exchange_active") is not True or x.get("trading_active") is not True for x in shards)):
+                return self._finish_unfilled("UNFILLED", "ioc_retry_exchange_inactive")
+            balance = self.broker.balance()
+            cash = money(balance["available_balance_usd"], "available account cash", nonnegative=True)
+            if cash < as_decimal(pending["budget"]):
+                return self._finish_unfilled("UNFILLED", "ioc_retry_insufficient_stake_funds")
+            if self.broker.positions(pending["ticker"]) or self.broker.orders(pending["ticker"]):
+                return self._finish_unfilled("UNFILLED", "ioc_retry_existing_exposure")
+        except Exception as exc:
+            self._event("LIVE_IOC_RETRY_PREFLIGHT_UNAVAILABLE", reason=type(exc).__name__)
+            return self._finish_unfilled("UNFILLED", "ioc_retry_preflight_unavailable")
+
+        try:
+            c = self._locked_candidate(self._candidate_from_pending(pending))
+        except CandidateInvalid as exc:
+            reason = ("underlying_moved_toward_strike"
+                      if "underlying_moved_toward_strike" in str(exc)
+                      else "ioc_retry_no_longer_eligible")
+            return self._finish_unfilled("UNFILLED", reason)
+
+        if not entry_time_eligible(c["close_time"], self.clock()) or not observation_fresh(c["observation_time"], self.clock()):
+            return self._finish_unfilled("UNFILLED", "ioc_retry_expired_before_intent")
+
+        updated = copy.deepcopy(self.state)
+        retry = updated["pending"]
+        history = list(retry.get("ioc_retry_history", []))
+        history.append({
+            "attempt": retry_count + 1,
+            "client_order_id": retry["client_order_id"],
+            "order_id": retry.get("order_id"),
+            "outcome": "UNFILLED",
+            "reason": "immediate_or_cancel_unfilled",
+            "finished_at": iso(self.clock()),
+        })
+        retry["ioc_retry_history"] = history
+        retry["ioc_zero_fill_retries"] = retry_count + 1
+        retry["client_order_id"] = str(uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            self.state["account_scope"] + ":" + self.state["session_id"] + ":"
+            + retry["round_key"] + ":ioc-retry:" + str(retry_count + 1)))
+        retry["order_id"] = None
+        retry.pop("submitted_at", None)
+        retry.update(stage="INTENT", execution=None, risk_flags=[], prepared_at=iso(self.clock()),
+                     observation_time=c["observation_time"], ask=c["ask"], quantity=c["quantity"],
+                     budget=c["budget"], fee_multiplier=c["fee_multiplier"],
+                     balance_precision=c["balance_precision"], worst_case_debit=c["worst_case_debit"],
+                     quoted_debit=c["debit"], quoted_payout=c["payout"],
+                     quoted_fees=c["fees"], quoted_principal=c["principal"])
+        for key in ("current", "target", "distance_pct", "series_ticker", "probability_field"):
+            if key in c:
+                retry[key] = str(c[key])
+        updated["pending"] = retry
+        updated["account_cash"] = str(cash)
+        self._commit(updated, "LIVE_IOC_RETRY_INTENT_DURABLE")
+        if self.source_update is not None:
+            return "SOURCE_UPDATE_HANDOFF"
+
+        try:
+            c = self._locked_candidate(c)
+        except CandidateInvalid as exc:
+            reason = ("underlying_moved_toward_strike"
+                      if "underlying_moved_toward_strike" in str(exc)
+                      else "ioc_retry_final_refresh_no_longer_eligible")
+            return self._finish_unfilled("UNFILLED", reason)
+        self._refresh_pending_intent(c)
+        if self.source_update is not None:
+            return "SOURCE_UPDATE_HANDOFF"
+        if not entry_time_eligible(c["close_time"], self.clock()) or not observation_fresh(c["observation_time"], self.clock()):
+            return self._finish_unfilled("UNFILLED", "ioc_retry_expired_after_final_refresh")
+
+        pending = self.state["pending"]
+        submitted_at = iso(self.clock())
+        try:
+            ack = self.broker.submit_limit_buy(
+                ticker=c["ticker"], side=c["side"], quantity=c["quantity"],
+                price=c["ask"], client_order_id=pending["client_order_id"],
+                expected_debit=c["debit"], fee_multiplier=c["fee_multiplier"],
+                balance_precision=c["balance_precision"], budget=c["budget"])
+        except TradingDisabled:
+            return self._finish_unfilled("NOT_SENT", "broker_disabled")
+        except OrderRejected:
+            return self._finish_unfilled("REJECTED", "exchange_rejected_order")
+        except Exception as exc:
+            self._event("LIVE_SUBMISSION_UNCERTAIN", reason=type(exc).__name__)
+            return "RECONCILING"
+        if (not isinstance(ack, dict) or not isinstance(ack.get("order_id"), str)
+                or not ack["order_id"] or ack.get("client_order_id") != pending["client_order_id"]):
+            self._event("LIVE_SUBMISSION_UNCERTAIN", reason="invalid_acknowledgement")
+            return "RECONCILING"
+        updated = copy.deepcopy(self.state)
+        updated["pending"].update(order_id=ack["order_id"], submitted_at=submitted_at, stage="ACKNOWLEDGED")
+        self._commit(updated, "LIVE_ORDER_ACKNOWLEDGED")
+        return "SOURCE_UPDATE_HANDOFF" if self.source_update is not None else self.reconcile()
+
     def _finish_unfilled(self, outcome, reason):
         updated = copy.deepcopy(self.state)
         attempt = updated["pending"]
@@ -583,6 +718,8 @@ class LiveExecution:
                         raise ReconciliationMismatch("previously_recorded_fill_changed")
             if execution is None:
                 if order.get("status") in {"canceled", "cancelled"} and _decimal(order, "remaining_count_fp") == 0:
+                    if pending.get("time_in_force") == "immediate_or_cancel":
+                        return self._retry_zero_fill_ioc()
                     return self._finish_unfilled("UNFILLED", "immediate_or_cancel_unfilled")
                 if order.get("status") == "resting" or _decimal(order, "remaining_count_fp") > 0:
                     return self._halt("unexpected_remaining_order")
