@@ -1,6 +1,6 @@
 {
   "account_cash": "8.8334",
-  "account_cash_checked_at": "2026-11-02T09:59:11.990150+00:00",
+  "account_cash_checked_at": "2026-11-02T10:14:02.755665+00:00",
   "account_scope": "production:0:31c8bad33d4eb70d",
   "attempted_rounds": [
     "1992567",
@@ -120,7 +120,8 @@
     "1992901",
     "1992902",
     "1992903",
-    "1992904"
+    "1992904",
+    "1992905"
   ],
   "attempts": [
     {
@@ -4671,8 +4672,37 @@
       "worst_case_debit": "4.30"
     }
   ],
-  "mode": "SCANNING",
-  "pending": null,
+  "mode": "RECONCILING",
+  "pending": {
+    "ask": "0.9400",
+    "balance_precision": "0.01",
+    "budget": "5.00",
+    "client_order_id": "947203cc-da44-57a0-9938-aab9517f536a",
+    "close_time": "2026-11-02T10:15:00Z",
+    "current": "4.71564467",
+    "distance_pct": "0.04507607902374446273697788489",
+    "execution": null,
+    "fee_multiplier": "1",
+    "observation_time": 1793614442.0,
+    "order_id": null,
+    "prepared_at": "2026-11-02T10:14:02.923037+00:00",
+    "probability_field": "kalshi_orderbook:1-best_NO_bid",
+    "quantity": "5.00",
+    "quoted_debit": "4.72",
+    "quoted_fees": "0.020000",
+    "quoted_payout": "5.00",
+    "quoted_principal": "4.700000",
+    "risk_flags": [],
+    "round_key": "1992905",
+    "series_ticker": "KX5YRRATE15M",
+    "side": "YES",
+    "source_sha": "8bf5ffd075d9c2a08dbd9b19c69f6e898639e968",
+    "stage": "INTENT",
+    "target": "4.71352",
+    "ticker": "KX5YRRATE15M-26NOV020515-15",
+    "time_in_force": "immediate_or_cancel",
+    "worst_case_debit": "5.00"
+  },
   "realized_pnl": "-11.016500",
   "schema": "kalshi-live.v1",
   "session_id": "2c127708-6f99-4d8c-8197-4de798ce4966",
