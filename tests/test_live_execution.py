@@ -1009,37 +1009,53 @@ def test_strike_cushion_maintained_or_increased_is_allowed(fx, side, start, refr
 
 
 @pytest.mark.parametrize("side,start,closer", [
-    ("YES", "101.00", "100.90"),
-    ("NO", "99.00", "99.10"),
+    ("YES", "101.00", "100.02"),
+    ("NO", "99.00", "99.98"),
 ])
-def test_movement_toward_strike_before_intent_is_rejected(fx, side, start, closer):
+def test_movement_toward_strike_is_allowed_when_absolute_cushion_still_passes(
+        fx, side, start, closer):
+    calls = []
     def refresher(original):
+        calls.append("refresh")
         return repriced_candidate(fx.clock, side=side, current=closer)
     engine = fx.restart(armed=True, candidate_refresher=refresher)
-    with pytest.raises(CandidateInvalid, match="underlying_moved_toward_strike"):
-        engine.submit(candidate(fx.clock, side, current=start))
+    assert engine.submit(candidate(fx.clock, side, current=start)) == "WAITING_FOR_SETTLEMENT"
+    assert calls == ["refresh", "refresh"]
+    assert len(fx.broker.posts) == 1
+
+
+@pytest.mark.parametrize("side,too_close", [
+    ("YES", "100.011"),
+    ("NO", "99.989"),
+])
+def test_refresh_below_absolute_strike_cushion_is_rejected_before_intent(
+        fx, side, too_close):
+    def refresher(original):
+        return repriced_candidate(fx.clock, side=side, current=too_close)
+    engine = fx.restart(armed=True, candidate_refresher=refresher)
+    with pytest.raises(CandidateInvalid, match="strike_cushion_below_minimum"):
+        engine.submit(candidate(fx.clock, side))
     assert not fx.broker.posts
     assert load(fx.path)["attempted_rounds"] == []
 
 
-@pytest.mark.parametrize("side,first,second", [
-    ("YES", "101.20", "101.10"),
-    ("NO", "98.80", "98.90"),
+@pytest.mark.parametrize("side,first,too_close", [
+    ("YES", "100.03", "100.011"),
+    ("NO", "99.97", "99.989"),
 ])
-def test_movement_toward_strike_after_durable_intent_is_not_sent_with_specific_reason(
-        fx, side, first, second):
+def test_final_refresh_below_absolute_strike_cushion_is_not_sent(
+        fx, side, first, too_close):
     calls = []
     def refresher(original):
         calls.append("refresh")
-        current = first if len(calls) == 1 else second
+        current = first if len(calls) == 1 else too_close
         return repriced_candidate(fx.clock, side=side, current=current)
     engine = fx.restart(armed=True, candidate_refresher=refresher)
-    result = engine.submit(candidate(fx.clock, side))
-    assert result == "SCANNING"
+    assert engine.submit(candidate(fx.clock, side)) == "SCANNING"
     assert calls == ["refresh", "refresh"]
     assert not fx.broker.posts
     state = load(fx.path)
-    assert state["attempts"][-1]["reason"] == "underlying_moved_toward_strike"
+    assert state["attempts"][-1]["reason"] == "final_refresh_no_longer_eligible"
 
 
 def test_xrp_style_81_to_29_collapse_still_never_reaches_post(fx):
