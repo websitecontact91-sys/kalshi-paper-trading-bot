@@ -1,6 +1,6 @@
 {
   "account_cash": "8.5520",
-  "account_cash_checked_at": "2026-11-02T07:29:39.559663+00:00",
+  "account_cash_checked_at": "2026-11-02T07:44:33.264894+00:00",
   "account_scope": "production:0:31c8bad33d4eb70d",
   "attempted_rounds": [
     "1992567",
@@ -111,7 +111,8 @@
     "1992891",
     "1992892",
     "1992893",
-    "1992894"
+    "1992894",
+    "1992895"
   ],
   "attempts": [
     {
@@ -4335,8 +4336,37 @@
       "worst_case_debit": "5.00"
     }
   ],
-  "mode": "SCANNING",
-  "pending": null,
+  "mode": "RECONCILING",
+  "pending": {
+    "ask": "0.8400",
+    "balance_precision": "0.01",
+    "budget": "5.00",
+    "client_order_id": "6a373d8f-41b6-5e36-9e51-fa17b5173fc7",
+    "close_time": "2026-11-02T07:45:00Z",
+    "current": "2.89843000",
+    "distance_pct": "0.03485859833921212665060640156",
+    "execution": null,
+    "fee_multiplier": "1",
+    "observation_time": 1793605473.0,
+    "order_id": null,
+    "prepared_at": "2026-11-02T07:44:33.471768+00:00",
+    "probability_field": "kalshi_orderbook:1-best_NO_bid",
+    "quantity": "5.00",
+    "quoted_debit": "4.25",
+    "quoted_fees": "0.050000",
+    "quoted_payout": "5.00",
+    "quoted_principal": "4.200000",
+    "risk_flags": [],
+    "round_key": "1992895",
+    "series_ticker": "KXNATGAS15M",
+    "side": "YES",
+    "source_sha": "201d4850d3269e22d2e5630d6e845fc835e857ba",
+    "stage": "INTENT",
+    "target": "2.89742",
+    "ticker": "KXNATGAS15M-26NOV020245-45",
+    "time_in_force": "immediate_or_cancel",
+    "worst_case_debit": "5.00"
+  },
   "realized_pnl": "-11.297900",
   "schema": "kalshi-live.v1",
   "session_id": "2c127708-6f99-4d8c-8197-4de798ce4966",
