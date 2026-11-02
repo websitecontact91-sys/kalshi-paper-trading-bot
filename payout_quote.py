@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 CENT = Decimal("0.01")
-MIN_MULT, MAX_MULT = Decimal("1.10"), Decimal("1.20")
-MIN_ASK, MAX_ASK = Decimal("0.80"), Decimal("0.90")
+MIN_MULT, MAX_MULT = Decimal("1.05"), Decimal("1.20")
+MIN_ASK, MAX_ASK = Decimal("0.80"), Decimal("0.95")
 
 MIN_ABS_STRIKE_CUSHION_PCT = Decimal("0.012")
 
