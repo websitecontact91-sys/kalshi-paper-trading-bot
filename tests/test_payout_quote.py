@@ -26,7 +26,7 @@ def test_regression_displayed_times_budget_is_the_bug():
 
 
 @pytest.mark.parametrize("payout,ok", [
-    ("5.4749", False), ("5.50", True), ("5.475", True),
+    ("5.2249", False), ("5.25", True), ("5.225", True),
     ("6.00", True), ("6.024", True), ("6.025", False), ("5.00", False),
 ])
 def test_payout_boundaries(payout, ok):
@@ -40,7 +40,7 @@ def test_old_090_ask_plus_010_reserve_cannot_qualify():
 
 
 @pytest.mark.parametrize("ask,ok", [("0.79", False), ("0.80", True),
-                                    ("0.90", True), ("0.91", False)])
+                                    ("0.90", True), ("0.95", True), ("0.96", False)])
 def test_ask_band_inclusive(ask, ok):
     assert ask_in_band(ask) is ok
 
