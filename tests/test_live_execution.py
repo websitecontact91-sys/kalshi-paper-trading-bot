@@ -1009,37 +1009,53 @@ def test_strike_cushion_maintained_or_increased_is_allowed(fx, side, start, refr
 
 
 @pytest.mark.parametrize("side,start,closer", [
-    ("YES", "101.00", "100.90"),
-    ("NO", "99.00", "99.10"),
+    ("YES", "101.00", "100.02"),
+    ("NO", "99.00", "99.98"),
 ])
-def test_movement_toward_strike_before_intent_is_rejected(fx, side, start, closer):
+def test_movement_toward_strike_is_allowed_when_absolute_cushion_still_passes(
+        fx, side, start, closer):
+    calls = []
     def refresher(original):
+        calls.append("refresh")
         return repriced_candidate(fx.clock, side=side, current=closer)
     engine = fx.restart(armed=True, candidate_refresher=refresher)
-    with pytest.raises(CandidateInvalid, match="underlying_moved_toward_strike"):
-        engine.submit(candidate(fx.clock, side, current=start))
+    assert engine.submit(candidate(fx.clock, side, current=start)) == "WAITING_FOR_SETTLEMENT"
+    assert calls == ["refresh", "refresh"]
+    assert len(fx.broker.posts) == 1
+
+
+@pytest.mark.parametrize("side,too_close", [
+    ("YES", "100.011"),
+    ("NO", "99.989"),
+])
+def test_refresh_below_absolute_strike_cushion_is_rejected_before_intent(
+        fx, side, too_close):
+    def refresher(original):
+        return repriced_candidate(fx.clock, side=side, current=too_close)
+    engine = fx.restart(armed=True, candidate_refresher=refresher)
+    with pytest.raises(CandidateInvalid, match="strike_cushion_below_minimum"):
+        engine.submit(candidate(fx.clock, side))
     assert not fx.broker.posts
     assert load(fx.path)["attempted_rounds"] == []
 
 
-@pytest.mark.parametrize("side,first,second", [
-    ("YES", "101.20", "101.10"),
-    ("NO", "98.80", "98.90"),
+@pytest.mark.parametrize("side,first,too_close", [
+    ("YES", "100.03", "100.011"),
+    ("NO", "99.97", "99.989"),
 ])
-def test_movement_toward_strike_after_durable_intent_is_not_sent_with_specific_reason(
-        fx, side, first, second):
+def test_final_refresh_below_absolute_strike_cushion_is_not_sent(
+        fx, side, first, too_close):
     calls = []
     def refresher(original):
         calls.append("refresh")
-        current = first if len(calls) == 1 else second
+        current = first if len(calls) == 1 else too_close
         return repriced_candidate(fx.clock, side=side, current=current)
     engine = fx.restart(armed=True, candidate_refresher=refresher)
-    result = engine.submit(candidate(fx.clock, side))
-    assert result == "SCANNING"
+    assert engine.submit(candidate(fx.clock, side)) == "SCANNING"
     assert calls == ["refresh", "refresh"]
     assert not fx.broker.posts
     state = load(fx.path)
-    assert state["attempts"][-1]["reason"] == "underlying_moved_toward_strike"
+    assert state["attempts"][-1]["reason"] == "final_refresh_no_longer_eligible"
 
 
 def test_xrp_style_81_to_29_collapse_still_never_reaches_post(fx):
@@ -1153,19 +1169,82 @@ def test_full_ioc_fill_position_equals_requested_quantity(fx):
     assert not execution_breaches(pending)
 
 
-def test_zero_ioc_fill_is_unfilled_and_never_retried(fx):
-    fx.broker.submit_error = AmbiguousOrderError("mock")
-    fx.engine.submit(candidate(fx.clock))
-    fx.broker.order.update(fill_count_fp="0", remaining_count_fp="0", status="canceled",
-                           taker_fill_cost_dollars="0", taker_fees_dollars="0")
-    fx.broker.executions = []
-    assert fx.engine.reconcile() == "SCANNING"
-    attempt = fx.engine.state["attempts"][-1]
+def test_zero_ioc_fill_gets_exactly_one_fully_revalidated_retry(fx):
+    calls = []
+    original = fx.broker.submit_limit_buy
+
+    def refresh(original_candidate):
+        calls.append("refresh")
+        return copy.deepcopy(original_candidate)
+
+    def submit(**kwargs):
+        response = original(**kwargs)
+        if len(fx.broker.posts) == 1:
+            fx.broker.order.update(fill_count_fp="0", remaining_count_fp="0", status="canceled",
+                                   taker_fill_cost_dollars="0", taker_fees_dollars="0")
+            fx.broker.executions = []
+        else:
+            fx.broker.order["order_id"] = "order-2"
+            fx.broker.order["client_order_id"] = kwargs["client_order_id"]
+            fx.broker.executions[0]["order_id"] = "order-2"
+            fx.broker.executions[0]["fill_id"] = "fill-2"
+            response["order_id"] = "order-2"
+        return response
+
+    fx.broker.submit_limit_buy = submit
+    engine = fx.restart(armed=True, candidate_refresher=refresh)
+    assert engine.submit(candidate(fx.clock)) == "WAITING_FOR_SETTLEMENT"
+    assert len(fx.broker.posts) == 2
+    assert len(calls) == 4
+    pending = engine.state["pending"]
+    assert pending["ioc_zero_fill_retries"] == 1
+    assert len(pending["ioc_retry_history"]) == 1
+    assert pending["ioc_retry_history"][0]["reason"] == "immediate_or_cancel_unfilled"
+    assert pending["execution"] is not None
+
+
+def test_second_zero_ioc_fill_is_terminal_for_round(fx):
+    calls = []
+    original = fx.broker.submit_limit_buy
+
+    def refresh(original_candidate):
+        calls.append("refresh")
+        return copy.deepcopy(original_candidate)
+
+    def submit(**kwargs):
+        response = original(**kwargs)
+        fx.broker.order.update(fill_count_fp="0", remaining_count_fp="0", status="canceled",
+                               taker_fill_cost_dollars="0", taker_fees_dollars="0")
+        fx.broker.executions = []
+        if len(fx.broker.posts) == 2:
+            fx.broker.order["order_id"] = "order-2"
+            fx.broker.order["client_order_id"] = kwargs["client_order_id"]
+            response["order_id"] = "order-2"
+        return response
+
+    fx.broker.submit_limit_buy = submit
+    engine = fx.restart(armed=True, candidate_refresher=refresh)
+    assert engine.submit(candidate(fx.clock)) == "SCANNING"
+    assert len(fx.broker.posts) == 2
+    assert len(calls) == 4
+    attempt = engine.state["attempts"][-1]
     assert attempt["outcome"] == "UNFILLED"
     assert attempt["reason"] == "immediate_or_cancel_unfilled"
-    assert attempt["time_in_force"] == "immediate_or_cancel"
-    assert fx.engine.submit(candidate(fx.clock)) == "BLOCKED_ALREADY_ATTEMPTED_ROUND"
+    assert attempt["ioc_zero_fill_retries"] == 1
+    assert len(attempt["ioc_retry_history"]) == 1
+    assert engine.submit(candidate(fx.clock)) == "BLOCKED_ALREADY_ATTEMPTED_ROUND"
+    assert len(fx.broker.posts) == 2
+
+
+def test_partial_ioc_fill_never_uses_zero_fill_retry(fx):
+    fx.broker.submit_error = AmbiguousOrderError("mock")
+    fx.engine.submit(candidate(fx.clock))
+    _partial(fx)
+    assert fx.engine.reconcile() == "WAITING_FOR_SETTLEMENT"
     assert len(fx.broker.posts) == 1
+    pending = fx.engine.state["pending"]
+    assert pending.get("ioc_zero_fill_retries", 0) == 0
+    assert not pending.get("ioc_retry_history")
 
 
 def test_ioc_cancelled_remainder_is_harmless_after_partial_fill(fx):
