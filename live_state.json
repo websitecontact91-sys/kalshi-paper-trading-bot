@@ -6423,7 +6423,7 @@
   ],
   "mode": "RECONCILING",
   "pending": {
-    "ask": "0.8700",
+    "ask": "0.8800",
     "balance_precision": "0.01",
     "budget": "5.00",
     "client_order_id": "51f47dc7-28b4-5192-b46b-397196b5882f",
@@ -6436,11 +6436,11 @@
     "order_id": null,
     "prepared_at": "2026-11-03T23:14:12.455432+00:00",
     "probability_field": "kalshi_orderbook:1-best_YES_bid",
-    "quantity": "4.00",
-    "quoted_debit": "3.52",
+    "quantity": "5.00",
+    "quoted_debit": "4.44",
     "quoted_fees": "0.040000",
-    "quoted_payout": "4.00",
-    "quoted_principal": "3.480000",
+    "quoted_payout": "5.00",
+    "quoted_principal": "4.400000",
     "risk_flags": [],
     "round_key": "1993053",
     "series_ticker": "KXXRP15M",
@@ -6450,7 +6450,7 @@
     "target": "1.28",
     "ticker": "KXXRP15M-26NOV031815-15",
     "time_in_force": "immediate_or_cancel",
-    "worst_case_debit": "4.00"
+    "worst_case_debit": "5.00"
   },
   "realized_pnl": "-9.961800",
   "schema": "kalshi-live.v1",
