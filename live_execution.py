@@ -575,7 +575,11 @@ class LiveExecution:
             cash = money(balance["available_balance_usd"], "available account cash", nonnegative=True)
             if cash < as_decimal(pending["budget"]):
                 return self._finish_unfilled("UNFILLED", "ioc_retry_insufficient_stake_funds")
-            if self.broker.positions(pending["ticker"]) or self.broker.orders(pending["ticker"]):
+            # A terminal zero-fill IOC may still appear in the account's order
+            # history. Only genuine unsettled positions or currently resting
+            # orders should block the one permitted retry.
+            if (self.broker.positions(pending["ticker"])
+                    or self.broker.orders(pending["ticker"], status="resting")):
                 return self._finish_unfilled("UNFILLED", "ioc_retry_existing_exposure")
         except Exception as exc:
             self._event("LIVE_IOC_RETRY_PREFLIGHT_UNAVAILABLE", reason=type(exc).__name__)
