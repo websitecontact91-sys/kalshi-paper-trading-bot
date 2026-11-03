@@ -65,7 +65,11 @@ class Broker:
 
     def exchange_status(self): return copy.deepcopy(self.status)
     def positions(self, ticker): return copy.deepcopy(self.existing_positions)
-    def orders(self, ticker): return copy.deepcopy(self.existing_orders)
+    def orders(self, ticker, status=None):
+        rows = copy.deepcopy(self.existing_orders)
+        if status is not None:
+            rows = [row for row in rows if row.get("status") == status]
+        return rows
 
     def submit_limit_buy(self, **kwargs):
         self.posts.append(copy.deepcopy(kwargs))
@@ -1201,6 +1205,71 @@ def test_zero_ioc_fill_gets_exactly_one_fully_revalidated_retry(fx):
     assert len(pending["ioc_retry_history"]) == 1
     assert pending["ioc_retry_history"][0]["reason"] == "immediate_or_cancel_unfilled"
     assert pending["execution"] is not None
+
+
+def test_zero_fill_retry_ignores_terminal_first_ioc_in_order_history(fx):
+    calls = []
+    original = fx.broker.submit_limit_buy
+
+    def refresh(original_candidate):
+        calls.append("refresh")
+        return copy.deepcopy(original_candidate)
+
+    def submit(**kwargs):
+        response = original(**kwargs)
+        if len(fx.broker.posts) == 1:
+            fx.broker.order.update(fill_count_fp="0", remaining_count_fp="0", status="canceled",
+                                   taker_fill_cost_dollars="0", taker_fees_dollars="0")
+            fx.broker.executions = []
+            fx.broker.existing_orders = [{
+                "ticker": kwargs["ticker"],
+                "order_id": fx.broker.order["order_id"],
+                "client_order_id": kwargs["client_order_id"],
+                "status": "canceled",
+            }]
+        else:
+            fx.broker.order["order_id"] = "order-2"
+            fx.broker.order["client_order_id"] = kwargs["client_order_id"]
+            fx.broker.executions[0]["order_id"] = "order-2"
+            fx.broker.executions[0]["fill_id"] = "fill-2"
+            response["order_id"] = "order-2"
+        return response
+
+    fx.broker.submit_limit_buy = submit
+    engine = fx.restart(armed=True, candidate_refresher=refresh)
+    assert engine.submit(candidate(fx.clock)) == "WAITING_FOR_SETTLEMENT"
+    assert len(fx.broker.posts) == 2
+    assert calls == ["refresh", "refresh", "refresh", "refresh"]
+    assert engine.state["pending"]["ioc_zero_fill_retries"] == 1
+
+
+def test_zero_fill_retry_still_blocks_genuine_resting_order(fx):
+    calls = []
+    original = fx.broker.submit_limit_buy
+
+    def refresh(original_candidate):
+        calls.append("refresh")
+        return copy.deepcopy(original_candidate)
+
+    def submit(**kwargs):
+        response = original(**kwargs)
+        fx.broker.order.update(fill_count_fp="0", remaining_count_fp="0", status="canceled",
+                               taker_fill_cost_dollars="0", taker_fees_dollars="0")
+        fx.broker.executions = []
+        fx.broker.existing_orders = [{
+            "ticker": kwargs["ticker"],
+            "order_id": "other-resting-order",
+            "client_order_id": "other-client",
+            "status": "resting",
+        }]
+        return response
+
+    fx.broker.submit_limit_buy = submit
+    engine = fx.restart(armed=True, candidate_refresher=refresh)
+    assert engine.submit(candidate(fx.clock)) == "SCANNING"
+    assert len(fx.broker.posts) == 1
+    attempt = engine.state["attempts"][-1]
+    assert attempt["reason"] == "ioc_retry_existing_exposure"
 
 
 def test_second_zero_ioc_fill_is_terminal_for_round(fx):
