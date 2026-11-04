@@ -7415,7 +7415,7 @@
       "worst_case_debit": "5.00"
     }
   ],
-  "mode": "RECONCILING",
+  "mode": "WAITING_FOR_SETTLEMENT",
   "pending": {
     "ask": "0.9400",
     "balance_precision": "0.01",
@@ -7424,7 +7424,31 @@
     "close_time": "2026-11-04T06:30:00Z",
     "current": "0.69797000",
     "distance_pct": "0.01289287453800532905480904220",
-    "execution": null,
+    "execution": {
+      "debit": "4.719800",
+      "displayed_multiplier": "1.06",
+      "fees": "0.019800",
+      "fill_ids": [
+        "072731c2-71d9-b2df-77a2-e43c775235a2"
+      ],
+      "fills": [
+        {
+          "fees": "0.019800",
+          "fill_id": "072731c2-71d9-b2df-77a2-e43c775235a2",
+          "filled_at": "2026-11-04T06:29:12.351016+00:00",
+          "is_taker": true,
+          "observed_at": "2026-11-04T06:29:14.174109+00:00",
+          "price": "0.9400",
+          "quantity": "5.00"
+        }
+      ],
+      "first_filled_at": "2026-11-04T06:29:12.351016+00:00",
+      "last_filled_at": "2026-11-04T06:29:12.351016+00:00",
+      "payout": "5.00",
+      "principal": "4.700000",
+      "quantity": "5.00",
+      "weighted_price": "0.9400"
+    },
     "fee_multiplier": "1",
     "ioc_retry_history": [
       {
@@ -7451,7 +7475,7 @@
     "series_ticker": "KXAUDUSD15M",
     "side": "NO",
     "source_sha": "ed84f4b6e9c2c0953f48e8967e7694adb842b2b5",
-    "stage": "ACKNOWLEDGED",
+    "stage": "FILLED",
     "submitted_at": "2026-11-04T06:29:12.314472+00:00",
     "target": "0.69806",
     "ticker": "KXAUDUSD15M-26NOV040130-30",
