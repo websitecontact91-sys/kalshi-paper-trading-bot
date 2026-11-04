@@ -1,6 +1,6 @@
 {
   "account_cash": "20.2511",
-  "account_cash_checked_at": "2026-11-04T03:14:05.623369+00:00",
+  "account_cash_checked_at": "2026-11-04T03:29:01.831502+00:00",
   "account_scope": "production:0:31c8bad33d4eb70d",
   "attempted_rounds": [
     "1992567",
@@ -183,7 +183,8 @@
     "1993066",
     "1993067",
     "1993068",
-    "1993069"
+    "1993069",
+    "1993070"
   ],
   "attempts": [
     {
@@ -7049,8 +7050,37 @@
       "worst_case_debit": "5.00"
     }
   ],
-  "mode": "SCANNING",
-  "pending": null,
+  "mode": "RECONCILING",
+  "pending": {
+    "ask": "0.9400",
+    "balance_precision": "0.01",
+    "budget": "5.00",
+    "client_order_id": "e1b066bd-029f-527a-81d2-51df33543fc2",
+    "close_time": "2026-11-04T03:30:00Z",
+    "current": "932.38800000",
+    "distance_pct": "0.1211262160943238193415372721",
+    "execution": null,
+    "fee_multiplier": "1",
+    "observation_time": 1793762941.0,
+    "order_id": null,
+    "prepared_at": "2026-11-04T03:29:01.977874+00:00",
+    "probability_field": "kalshi_orderbook:1-best_NO_bid",
+    "quantity": "5.00",
+    "quoted_debit": "4.72",
+    "quoted_fees": "0.020000",
+    "quoted_payout": "5.00",
+    "quoted_principal": "4.700000",
+    "risk_flags": [],
+    "round_key": "1993070",
+    "series_ticker": "KXPALLADIUM15M",
+    "side": "YES",
+    "source_sha": "ed84f4b6e9c2c0953f48e8967e7694adb842b2b5",
+    "stage": "INTENT",
+    "target": "931.26",
+    "ticker": "KXPALLADIUM15M-26NOV032230-30",
+    "time_in_force": "immediate_or_cancel",
+    "worst_case_debit": "5.00"
+  },
   "realized_pnl": "-9.398800",
   "schema": "kalshi-live.v1",
   "session_id": "2c127708-6f99-4d8c-8197-4de798ce4966",
