@@ -8679,7 +8679,7 @@
       "worst_case_debit": "1.00"
     }
   ],
-  "mode": "RECONCILING",
+  "mode": "WAITING_FOR_SETTLEMENT",
   "pending": {
     "ask": "0.8800",
     "balance_precision": "0.01",
@@ -8688,7 +8688,31 @@
     "close_time": "2026-11-06T11:45:00Z",
     "current": "1529.90500000",
     "distance_pct": "0.05356938705515360368452857306",
-    "execution": null,
+    "execution": {
+      "debit": "4.008100",
+      "displayed_multiplier": "1.25",
+      "fees": "0.058100",
+      "fill_ids": [
+        "0727721d-6521-abc6-4390-f54b03507f83"
+      ],
+      "fills": [
+        {
+          "fees": "0.058100",
+          "fill_id": "0727721d-6521-abc6-4390-f54b03507f83",
+          "filled_at": "2026-11-06T11:44:04.771922+00:00",
+          "is_taker": true,
+          "observed_at": "2026-11-06T11:44:06.394573+00:00",
+          "price": "0.7900",
+          "quantity": "5.00"
+        }
+      ],
+      "first_filled_at": "2026-11-06T11:44:04.771922+00:00",
+      "last_filled_at": "2026-11-06T11:44:04.771922+00:00",
+      "payout": "5.00",
+      "principal": "3.950000",
+      "quantity": "5.00",
+      "weighted_price": "0.7900"
+    },
     "fee_multiplier": "1",
     "observation_time": 1793965442.0,
     "order_id": "01a1b0ac-4ba0-75d3-bb44-8ddaee9fed7f",
@@ -8699,12 +8723,15 @@
     "quoted_fees": "0.040000",
     "quoted_payout": "5.00",
     "quoted_principal": "4.400000",
-    "risk_flags": [],
+    "risk_flags": [
+      "actual_payout_multiple_out_of_band",
+      "fill_price_out_of_band"
+    ],
     "round_key": "1993295",
     "series_ticker": "KXPLATINUM15M",
     "side": "NO",
     "source_sha": "ed84f4b6e9c2c0953f48e8967e7694adb842b2b5",
-    "stage": "ACKNOWLEDGED",
+    "stage": "FILLED",
     "submitted_at": "2026-11-06T11:44:04.763406+00:00",
     "target": "1530.725",
     "ticker": "KXPLATINUM15M-26NOV060645-45",
