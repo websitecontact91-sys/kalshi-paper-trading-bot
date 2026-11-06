@@ -9659,7 +9659,7 @@
       "worst_case_debit": "5.00"
     }
   ],
-  "mode": "RECONCILING",
+  "mode": "WAITING_FOR_SETTLEMENT",
   "pending": {
     "ask": "0.8400",
     "balance_precision": "0.01",
@@ -9668,7 +9668,31 @@
     "close_time": "2026-11-06T18:00:00Z",
     "current": "5.23928611",
     "distance_pct": "0.02640673806975062348898137070",
-    "execution": null,
+    "execution": {
+      "debit": "4.103900",
+      "displayed_multiplier": "1.22",
+      "fees": "0.053900",
+      "fill_ids": [
+        "07277a0d-4b81-b8ac-d913-c84d1b6995d2"
+      ],
+      "fills": [
+        {
+          "fees": "0.053900",
+          "fill_id": "07277a0d-4b81-b8ac-d913-c84d1b6995d2",
+          "filled_at": "2026-11-06T17:59:12.500792+00:00",
+          "is_taker": true,
+          "observed_at": "2026-11-06T17:59:14.378435+00:00",
+          "price": "0.8100",
+          "quantity": "5.00"
+        }
+      ],
+      "first_filled_at": "2026-11-06T17:59:12.500792+00:00",
+      "last_filled_at": "2026-11-06T17:59:12.500792+00:00",
+      "payout": "5.00",
+      "principal": "4.050000",
+      "quantity": "5.00",
+      "weighted_price": "0.8100"
+    },
     "fee_multiplier": "1",
     "ioc_retry_history": [
       {
@@ -9690,12 +9714,14 @@
     "quoted_fees": "0.050000",
     "quoted_payout": "5.00",
     "quoted_principal": "4.200000",
-    "risk_flags": [],
+    "risk_flags": [
+      "actual_payout_multiple_out_of_band"
+    ],
     "round_key": "1993320",
     "series_ticker": "KX30YRRATE15M",
     "side": "NO",
     "source_sha": "ed84f4b6e9c2c0953f48e8967e7694adb842b2b5",
-    "stage": "ACKNOWLEDGED",
+    "stage": "FILLED",
     "submitted_at": "2026-11-06T17:59:12.464233+00:00",
     "target": "5.24067",
     "ticker": "KX30YRRATE15M-26NOV061300-00",
