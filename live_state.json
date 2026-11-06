@@ -8641,8 +8641,8 @@
     "budget": "5.00",
     "client_order_id": "1ab5c522-1bbb-5446-b331-18ed5ea4fbc9",
     "close_time": "2026-11-06T11:30:00Z",
-    "current": "3.01488000",
-    "distance_pct": "0.06927480220220950158602836621",
+    "current": "3.01484000",
+    "distance_pct": "0.07060063573718001836279445934",
     "execution": null,
     "fee_multiplier": "1",
     "ioc_retry_history": [
@@ -8656,7 +8656,7 @@
       }
     ],
     "ioc_zero_fill_retries": 1,
-    "observation_time": 1793964546.0,
+    "observation_time": 1793964547.0,
     "order_id": null,
     "prepared_at": "2026-11-06T11:29:06.567522+00:00",
     "probability_field": "kalshi_orderbook:1-best_YES_bid",
