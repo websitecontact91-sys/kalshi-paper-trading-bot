@@ -8285,7 +8285,7 @@
       "worst_case_debit": "5.00"
     }
   ],
-  "mode": "RECONCILING",
+  "mode": "WAITING_FOR_SETTLEMENT",
   "pending": {
     "ask": "0.8900",
     "balance_precision": "0.01",
@@ -8294,7 +8294,41 @@
     "close_time": "2026-11-06T09:30:00Z",
     "current": "1033.89300000",
     "distance_pct": "0.06147725196683708238241750594",
-    "execution": null,
+    "execution": {
+      "debit": "3.587500",
+      "displayed_multiplier": "1.11",
+      "fees": "0.027500",
+      "fill_ids": [
+        "072770f3-a599-ab16-9949-65df1ae45826",
+        "072770f3-b981-ae6a-8cef-25e26a7fc87b"
+      ],
+      "fills": [
+        {
+          "fees": "0.006900",
+          "fill_id": "072770f3-a599-ab16-9949-65df1ae45826",
+          "filled_at": "2026-11-06T09:29:08.941439+00:00",
+          "is_taker": true,
+          "observed_at": "2026-11-06T09:29:10.402756+00:00",
+          "price": "0.8900",
+          "quantity": "1.00"
+        },
+        {
+          "fees": "0.020600",
+          "fill_id": "072770f3-b981-ae6a-8cef-25e26a7fc87b",
+          "filled_at": "2026-11-06T09:29:08.941439+00:00",
+          "is_taker": true,
+          "observed_at": "2026-11-06T09:29:10.402756+00:00",
+          "price": "0.8900",
+          "quantity": "3.00"
+        }
+      ],
+      "first_filled_at": "2026-11-06T09:29:08.941439+00:00",
+      "last_filled_at": "2026-11-06T09:29:08.941439+00:00",
+      "payout": "4.00",
+      "principal": "3.560000",
+      "quantity": "4.00",
+      "weighted_price": "0.8900"
+    },
     "fee_multiplier": "1",
     "ioc_retry_history": [
       {
@@ -8321,7 +8355,7 @@
     "series_ticker": "KXPALLADIUM15M",
     "side": "NO",
     "source_sha": "ed84f4b6e9c2c0953f48e8967e7694adb842b2b5",
-    "stage": "ACKNOWLEDGED",
+    "stage": "FILLED",
     "submitted_at": "2026-11-06T09:29:08.933483+00:00",
     "target": "1034.529",
     "ticker": "KXPALLADIUM15M-26NOV060430-30",
