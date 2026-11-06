@@ -1,6 +1,6 @@
 {
-  "account_cash": "20.9357",
-  "account_cash_checked_at": "2026-11-06T09:14:00.664095+00:00",
+  "account_cash": "21.4514",
+  "account_cash_checked_at": "2026-11-06T09:15:19.385983+00:00",
   "account_scope": "production:0:31c8bad33d4eb70d",
   "attempted_rounds": [
     "1992567",
@@ -8222,65 +8222,71 @@
       "time_in_force": "immediate_or_cancel",
       "won": true,
       "worst_case_debit": "4.80"
+    },
+    {
+      "ask": "0.8900",
+      "balance_precision": "0.01",
+      "budget": "5.00",
+      "cash_payout": "5",
+      "client_order_id": "3aa23c72-79fb-514f-80db-2f790397b09e",
+      "close_time": "2026-11-06T09:15:00Z",
+      "current": "5.25018622",
+      "distance_pct": "0.02012181066195731483121964973",
+      "execution": {
+        "debit": "4.484300",
+        "displayed_multiplier": "1.12",
+        "fees": "0.034300",
+        "fill_ids": [
+          "072770ab-5861-b031-bfcf-fc76b1ac0920"
+        ],
+        "fills": [
+          {
+            "fees": "0.034300",
+            "fill_id": "072770ab-5861-b031-bfcf-fc76b1ac0920",
+            "filled_at": "2026-11-06T09:14:05.150323+00:00",
+            "is_taker": true,
+            "observed_at": "2026-11-06T09:14:07.081588+00:00",
+            "price": "0.8900",
+            "quantity": "5.00"
+          }
+        ],
+        "first_filled_at": "2026-11-06T09:14:05.150323+00:00",
+        "last_filled_at": "2026-11-06T09:14:05.150323+00:00",
+        "payout": "5.00",
+        "principal": "4.450000",
+        "quantity": "5.00",
+        "weighted_price": "0.8900"
+      },
+      "fee_multiplier": "1",
+      "observation_time": 1793956442.0,
+      "order_id": "01a1b022-fb48-7366-8fe5-e811eb291e1f",
+      "pnl": "0.515700",
+      "prepared_at": "2026-11-06T09:14:01.104004+00:00",
+      "probability_field": "kalshi_orderbook:1-best_NO_bid",
+      "quantity": "5.00",
+      "quoted_debit": "4.49",
+      "quoted_fees": "0.040000",
+      "quoted_payout": "5.00",
+      "quoted_principal": "4.450000",
+      "result": "YES",
+      "risk_flags": [],
+      "round_key": "1993285",
+      "series_ticker": "KX30YRRATE15M",
+      "settled_at": "2026-11-06T09:15:17.053728+00:00",
+      "side": "YES",
+      "source_sha": "ed84f4b6e9c2c0953f48e8967e7694adb842b2b5",
+      "stage": "SETTLED",
+      "submitted_at": "2026-11-06T09:14:05.112675+00:00",
+      "target": "5.24913",
+      "ticker": "KX30YRRATE15M-26NOV060415-15",
+      "time_in_force": "immediate_or_cancel",
+      "won": true,
+      "worst_case_debit": "5.00"
     }
   ],
-  "mode": "WAITING_FOR_SETTLEMENT",
-  "pending": {
-    "ask": "0.8900",
-    "balance_precision": "0.01",
-    "budget": "5.00",
-    "client_order_id": "3aa23c72-79fb-514f-80db-2f790397b09e",
-    "close_time": "2026-11-06T09:15:00Z",
-    "current": "5.25018622",
-    "distance_pct": "0.02012181066195731483121964973",
-    "execution": {
-      "debit": "4.484300",
-      "displayed_multiplier": "1.12",
-      "fees": "0.034300",
-      "fill_ids": [
-        "072770ab-5861-b031-bfcf-fc76b1ac0920"
-      ],
-      "fills": [
-        {
-          "fees": "0.034300",
-          "fill_id": "072770ab-5861-b031-bfcf-fc76b1ac0920",
-          "filled_at": "2026-11-06T09:14:05.150323+00:00",
-          "is_taker": true,
-          "observed_at": "2026-11-06T09:14:07.081588+00:00",
-          "price": "0.8900",
-          "quantity": "5.00"
-        }
-      ],
-      "first_filled_at": "2026-11-06T09:14:05.150323+00:00",
-      "last_filled_at": "2026-11-06T09:14:05.150323+00:00",
-      "payout": "5.00",
-      "principal": "4.450000",
-      "quantity": "5.00",
-      "weighted_price": "0.8900"
-    },
-    "fee_multiplier": "1",
-    "observation_time": 1793956442.0,
-    "order_id": "01a1b022-fb48-7366-8fe5-e811eb291e1f",
-    "prepared_at": "2026-11-06T09:14:01.104004+00:00",
-    "probability_field": "kalshi_orderbook:1-best_NO_bid",
-    "quantity": "5.00",
-    "quoted_debit": "4.49",
-    "quoted_fees": "0.040000",
-    "quoted_payout": "5.00",
-    "quoted_principal": "4.450000",
-    "risk_flags": [],
-    "round_key": "1993285",
-    "series_ticker": "KX30YRRATE15M",
-    "side": "YES",
-    "source_sha": "ed84f4b6e9c2c0953f48e8967e7694adb842b2b5",
-    "stage": "FILLED",
-    "submitted_at": "2026-11-06T09:14:05.112675+00:00",
-    "target": "5.24913",
-    "ticker": "KX30YRRATE15M-26NOV060415-15",
-    "time_in_force": "immediate_or_cancel",
-    "worst_case_debit": "5.00"
-  },
-  "realized_pnl": "-8.714200",
+  "mode": "SCANNING",
+  "pending": null,
+  "realized_pnl": "-8.198500",
   "schema": "kalshi-live.v1",
   "session_id": "2c127708-6f99-4d8c-8197-4de798ce4966",
   "stop_reason": null
