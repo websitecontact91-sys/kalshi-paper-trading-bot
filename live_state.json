@@ -12921,7 +12921,7 @@
       }
     ],
     "ioc_zero_fill_retries": 1,
-    "observation_time": 1794227347.0,
+    "observation_time": 1794227349.0,
     "order_id": null,
     "prepared_at": "2026-11-09T12:29:08.442718+00:00",
     "probability_field": "kalshi_orderbook:1-best_NO_bid",
