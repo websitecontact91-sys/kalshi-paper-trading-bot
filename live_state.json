@@ -1,6 +1,6 @@
 {
   "account_cash": "6.7974",
-  "account_cash_checked_at": "2026-11-09T10:29:05.513256+00:00",
+  "account_cash_checked_at": "2026-11-09T10:44:01.421286+00:00",
   "account_scope": "production:0:31c8bad33d4eb70d",
   "attempted_rounds": [
     "1992567",
@@ -327,7 +327,8 @@
     "1993575",
     "1993576",
     "1993577",
-    "1993578"
+    "1993578",
+    "1993579"
   ],
   "attempts": [
     {
@@ -12649,8 +12650,37 @@
       "worst_case_debit": "5.00"
     }
   ],
-  "mode": "SCANNING",
-  "pending": null,
+  "mode": "RECONCILING",
+  "pending": {
+    "ask": "0.9240",
+    "balance_precision": "0.01",
+    "budget": "5.00",
+    "client_order_id": "6a960fd3-2154-5d27-98d1-3d4bec0d7701",
+    "close_time": "2026-11-09T10:45:00Z",
+    "current": "52.56067000",
+    "distance_pct": "0.03105920839910987694238925766",
+    "execution": null,
+    "fee_multiplier": "1",
+    "observation_time": 1794221041.0,
+    "order_id": null,
+    "prepared_at": "2026-11-09T10:44:01.566266+00:00",
+    "probability_field": "kalshi_orderbook:1-best_YES_bid",
+    "quantity": "5.00",
+    "quoted_debit": "4.65",
+    "quoted_fees": "0.030000",
+    "quoted_payout": "5.00",
+    "quoted_principal": "4.620000",
+    "risk_flags": [],
+    "round_key": "1993579",
+    "series_ticker": "KXSILVER15M",
+    "side": "NO",
+    "source_sha": "ed84f4b6e9c2c0953f48e8967e7694adb842b2b5",
+    "stage": "INTENT",
+    "target": "52.577",
+    "ticker": "KXSILVER15M-26NOV090545-45",
+    "time_in_force": "immediate_or_cancel",
+    "worst_case_debit": "5.00"
+  },
   "realized_pnl": "-22.852500",
   "schema": "kalshi-live.v1",
   "session_id": "2c127708-6f99-4d8c-8197-4de798ce4966",
