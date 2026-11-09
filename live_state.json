@@ -13427,7 +13427,7 @@
     "distance_pct": "0.01414857417743726875924078751",
     "execution": null,
     "fee_multiplier": "1",
-    "observation_time": 1794239052.0,
+    "observation_time": 1794239053.0,
     "order_id": null,
     "prepared_at": "2026-11-09T15:44:12.821557+00:00",
     "probability_field": "kalshi_orderbook:1-best_YES_bid",
